@@ -1,6 +1,5 @@
 SHELL := bash
-CXXSTD := -std=c++17
-CPPFLAGS := -Iinclude
+CPPFLAGS := -std=c++17 -Iinclude
 CXXFLAGS := -Wall -O3 -flto -fmax-errors=3
 # CXXFLAGS := -Wall -g -fmax-errors=3
 
@@ -27,21 +26,21 @@ all: $(EXES)
 
 $(BLD)/%.d: src/%.cc
 	@mkdir -pv $(dir $@)
-	$(CXX) $(CPPFLAGS) -MM -MT '$@ $(@:.d=.o)' $< -MF $@
+	$(CXX) $(CPPFLAGS) -MM -MP -MT '$@ $(@:.d=.o)' $< -MF $@
 	@\
   if [ ! -z '$(findstring $(BIN)/$*, $(EXES))' ]; then \
     objs=$$(cat $@ \
     | awk \
       '{ for (i=1; i<=NF; i++) { \
-           if (match($$i,/^include\/(.+)\.h[hpx]*\\?/,m)) { print m[1]; } \
+           if (match($$i,/^include\/(.+)\.h[hpx]*\\?$$/,m)) { print m[1]; } \
        } }' \
     | while read f; do [ -f "src/$$f.cc" ] && echo "$(BLD)/$$f.o"; done); \
-    if [ ! -z "$$objs" ]; then echo "$(BIN)/$*:" $$objs >> $@; fi \
+    if [ ! -z "$$objs" ]; then echo -e "\n$(BIN)/$*:" $$objs >> $@; fi \
   fi
 
 $(BLD)/%.o: src/%.cc
 	@mkdir -pv $(dir $@)
-	$(CXX) $(CXXSTD) $(CPPFLAGS) $(CXXFLAGS) -c $(filter %.cc,$^) -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(filter %.cc,$^) -o $@
 
 $(BIN)/%: $(BLD)/%.o
 	@mkdir -pv $(dir $@)

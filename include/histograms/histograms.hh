@@ -7,7 +7,6 @@
 #include <array>
 #include <string>
 
-#include <histograms/common.hh>
 #include <histograms/axes.hh>
 #include <histograms/bin_filler.hh>
 #include <histograms/containers.hh>
@@ -62,7 +61,7 @@ public:
     is_filler_spec<filler_spec< bin_filler >>
   >::type;
   using all_type = std::vector<named_ptr<histogram>>;
-  using index_type = size_type; // TODO: maybe generalize this
+  using index_type = histograms::index_type;
 
 private:
   axes_type _axes;
@@ -76,6 +75,7 @@ public:
   histogram& operator=(const histogram&) = default;
   histogram& operator=(histogram&&) = default;
 
+  // TODO: initialize the right number of bins
   histogram(const axes_type& axes): _axes(axes) { }
   histogram(axes_type&& axes): _axes(std::move(axes)) { }
   histogram(std::string name, const axes_type& axes): _axes(axes) {
@@ -154,7 +154,7 @@ public:
   template <typename... T>
   auto find_bin_index(const T&... xs) const -> std::enable_if_t<
     (sizeof...(xs) > 1)
-    || !containers::has_size<head_t<const T...>>::value,
+    || !containers::has_size<const head_t<T...>>::value,
     index_type
   > {
     return find_bin_index(std::forward_as_tuple(xs...));
