@@ -1,6 +1,7 @@
 #ifndef IVANP_CONTAINERS_HH
 #define IVANP_CONTAINERS_HH
 
+#include <tuple>
 #include <histograms/traits.hh>
 
 namespace histograms {
@@ -45,12 +46,13 @@ class iterator<T,I,
   std::enable_if_t< has_tuple_size<T>::value >
 > { // tuple
   T& x;
+  static constexpr auto size = std::tuple_size<T>::value;
 public:
   iterator(T& x): x(x) { }
   constexpr decltype(auto) operator*() { return get<I>(x); }
   constexpr decltype(auto) operator++() { return iterator<T,I+1>(x); }
-  constexpr bool operator!() const noexcept { return I >= size(x); }
-  constexpr bool is_known_last() const noexcept { return I+1 >= size(x); }
+  constexpr bool operator!() const noexcept { return I >= size; }
+  static constexpr bool is_known_last = (I+1 >= size);
 };
 
 template <typename T, size_t I>
@@ -64,15 +66,15 @@ public:
   decltype(auto) operator*() { return *it; }
   decltype(auto) operator++() { ++it; return *this; }
   bool operator!() noexcept { return it == _end; }
-  constexpr bool is_known_last() const noexcept { return false; }
+  static constexpr bool is_known_last = false;
 };
 
 template <typename... T, typename F>
 void for_each(F&& f, T&&... it) {
   if ((!!it && ...)) {
     f(*it...);
-    if constexpr (!(it.is_known_last() || ...))
-      for_each(std::forward<F>(f),++it...);
+    if constexpr (!(std::remove_reference_t<T>::is_known_last || ...))
+      detail::for_each::for_each(std::forward<F>(f),++it...);
   }
 }
 
@@ -82,7 +84,7 @@ template <typename... T, typename F>
 void for_each(F&& f, T&&... xs) {
   detail::for_each::for_each(
     std::forward<F>(f),
-    detail::for_each::iterator<T,0>(xs)...
+    detail::for_each::iterator<std::remove_reference_t<T>,0>(xs)...
   );
 }
 

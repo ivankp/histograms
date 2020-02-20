@@ -17,7 +17,9 @@ EXES_CMD := \
   grep -l '^ *int \+main *(' $(SRCS) | sed 's:src/\(.*\)\.c.*$$:$(BIN)/\1:'
 EXES := $(shell $(EXES_CMD))
 
-DEPS := $(shell echo '$(SRCS)' | sed 's:src/\(.*\)\.c.*$$:$(BLD)/\1.d:g')
+DEPS := $(shell echo '$(SRCS)' | sed 's:src/\([^ ]*\)\.c[^ ]*:$(BLD)/\1.d:g')
+
+.PRECIOUS: $(BLD)/%.d $(BLD)/%.o
 
 all: $(EXES)
 
