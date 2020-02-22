@@ -10,6 +10,8 @@ IVANP_MAKE_OP_TRAIT_2( is_indexable, std::declval<T&>()[std::declval<T2&>()] )
 IVANP_MAKE_OP_TRAIT_2( has_at, std::declval<T&>().at(std::declval<T2&>()) )
 IVANP_MAKE_OP_TRAIT_1( has_size, std::declval<T&>().size() )
 IVANP_MAKE_OP_TRAIT_1( has_tuple_size, std::tuple_size<T>::value )
+IVANP_MAKE_OP_TRAIT_2( is_resizable,
+  std::declval<T&>().resize(std::declval<T2&>()) )
 
 namespace containers {
 
@@ -30,7 +32,7 @@ inline auto at(C& c, I i) -> std::enable_if_t<
   !is_indexable<C,I>::value, decltype(c.at(i))
 > { return c.at(i); }
 
-namespace detail { namespace for_each {
+namespace detail { namespace multiple_iteration {
 
 using std::get;
 using std::begin;
@@ -74,7 +76,7 @@ void for_each(F&& f, T&&... it) {
   if ((!!it && ...)) {
     f(*it...);
     if constexpr (!(std::remove_reference_t<T>::is_known_last || ...))
-      detail::for_each::for_each(std::forward<F>(f),++it...);
+      detail::multiple_iteration::for_each( std::forward<F>(f), ++it... );
   }
 }
 
@@ -82,9 +84,9 @@ void for_each(F&& f, T&&... it) {
 
 template <typename... T, typename F>
 void for_each(F&& f, T&&... xs) {
-  detail::for_each::for_each(
+  detail::multiple_iteration::for_each(
     std::forward<F>(f),
-    detail::for_each::iterator<std::remove_reference_t<T>,0>(xs)...
+    detail::multiple_iteration::iterator<std::remove_reference_t<T>,0>(xs)...
   );
 }
 

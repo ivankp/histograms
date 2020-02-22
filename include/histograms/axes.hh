@@ -29,11 +29,11 @@ template <typename Edge>
 struct poly_axis_base: axis_base<Edge> {
   using edge_type = typename axis_base<Edge>::edge_type;
 
-  virtual ~poly_axis_base() = 0;
+  virtual ~poly_axis_base() { }
   virtual index_type nedges() const = 0;
   virtual index_type nbins() const = 0;
 
-  virtual index_type find_bin(edge_type x) const = 0;
+  virtual index_type find_bin_index(edge_type x) const = 0;
 
   virtual edge_type edge(index_type i) const = 0;
   virtual edge_type min() const = 0;
@@ -48,7 +48,7 @@ using axis_base_t = std::conditional_t< Poly,
 
 // Container axis ===================================================
 
-template <typename Container, bool Poly=false>
+template <typename Container=std::vector<double>, bool Poly=false>
 class container_axis final: public axis_base_t< Poly,
   typename std::decay_t<Container>::value_type >
 {
@@ -106,22 +106,22 @@ public:
     return i>=nedges() ? highest : edge(i);
   }
 
-  template <typename T>
-  index_type find_bin(const T& x) const noexcept {
+  index_type find_bin_index(edge_type x) const noexcept {
     using namespace std;
     return distance(
       begin(_edges), upper_bound(begin(_edges), end(_edges), x)
     );
   }
-  template <typename T>
-  index_type operator()(const T& x) const noexcept { return find_bin(x); }
+  index_type operator()(edge_type x) const noexcept {
+    return find_bin_index(x);
+  }
 
   const container_type& edges() const { return _edges; }
 };
 
 // Uniform axis =====================================================
 
-template <typename EdgeT, bool Poly=false>
+template <typename EdgeT=double, bool Poly=false>
 class uniform_axis final: public axis_base_t< Poly, EdgeT >
 {
 public:
@@ -166,14 +166,14 @@ public:
     return edge(i);
   }
 
-  template <typename T>
-  index_type find_bin(const T& x) const noexcept {
+  index_type find_bin_index(edge_type x) const noexcept {
     if (x < _min) return 0;
     if (!(x < _max)) return _nbins+1;
     return index_type(_nbins*(x-_min)/(_max-_min)) + 1;
   }
-  template <typename T>
-  index_type operator()(const T& x) const noexcept { return find_bin(x); }
+  index_type operator()(edge_type x) const noexcept {
+    return find_bin_index(x);
+  }
 };
 
 // Reference axis ===================================================
@@ -206,10 +206,12 @@ public:
   edge_type lower(index_type i) const noexcept { return _ref->lower(i); }
   edge_type upper(index_type i) const noexcept { return _ref->upper(i); }
 
-  template <typename T>
-  index_type find_bin(const T& x) const noexcept { return _ref->find_bin(x); }
-  template <typename T>
-  index_type operator()(const T& x) const noexcept { return find_bin(x); }
+  index_type find_bin_index(edge_type x) const noexcept {
+    return _ref->find_bin_index(x);
+  }
+  index_type operator()(edge_type x) const noexcept {
+    return find_bin_index(x);
+  }
 };
 
 } // end namespace histograms

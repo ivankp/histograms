@@ -45,7 +45,7 @@ struct is_filler_spec<filler_spec<T>> {
 
 template <
   typename Bin = double,
-  typename Axes = std::tuple<container_axis<std::vector<double>>>,
+  typename Axes = std::vector<container_axis<std::vector<double>>>,
   typename... Specs
 >
 class histogram {
@@ -65,8 +65,16 @@ public:
 
 private:
   axes_type _axes;
-  bins_container_type _bins; // TODO: might need to initialize in ctor
+  bins_container_type _bins;
   static all_type _all;
+
+  void resize_bins() {
+    if constexpr (is_resizable<bins_container_type,size_t>::value) {
+      index_type n = 1;
+      containers::for_each([&](const auto& a){ n *= a.nedges()+1; },_axes);
+      _bins.resize(n);
+    }
+  }
 
 public:
   histogram() { }
@@ -75,13 +83,12 @@ public:
   histogram& operator=(const histogram&) = default;
   histogram& operator=(histogram&&) = default;
 
-  // TODO: initialize the right number of bins
-  histogram(const axes_type& axes): _axes(axes) { }
-  histogram(axes_type&& axes): _axes(std::move(axes)) { }
-  histogram(std::string name, const axes_type& axes): _axes(axes) {
+  histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
+  histogram(axes_type&& axes): _axes(std::move(axes)) { resize_bins(); }
+  histogram(std::string name, const axes_type& axes): histogram(axes) {
     all.emplace_back(this,std::move(name));
   }
-  histogram(std::string name, axes_type&& axes): _axes(std::move(axes)) {
+  histogram(std::string name, axes_type&& axes): histogram(std::move(axes)) {
     all.emplace_back(this,std::move(name));
   }
 
@@ -108,7 +115,6 @@ public:
   {
     if (containers::size(ii) != containers::size(_axes))
       throw; // TODO
-    // TODO: bug, gives wrong index
     index_type index = 0, n = 1;
     containers::for_each([&](index_type i, const auto& a){
       index += i*n;
@@ -116,12 +122,13 @@ public:
     },ii,_axes);
     return index;
   }
+
+  index_type join_index(index_type i) const { return i; }
   template <typename... T>
   auto join_index(const T&... ii) const
   -> std::enable_if_t< (sizeof...(ii) > 1), index_type > {
     return join_index(std::forward_as_tuple(ii...));
   }
-  index_type join_index(index_type i) const { return i; }
 
   template <typename T = std::initializer_list<index_type>, typename... T2>
   const bin_type& bin_at(const T& ii, const T2&... ii2) const {
@@ -145,7 +152,7 @@ public:
       throw; // TODO
     index_type index = 0, n = 1;
     containers::for_each([&](const auto& x, const auto& a){
-      index += a.find_bin(x)*n;
+      index += a.find_bin_index(x)*n;
       n *= a.nedges()+1;
     },xs,_axes);
     return index;
