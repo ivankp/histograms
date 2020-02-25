@@ -107,7 +107,7 @@ public:
   template <typename... T>
   auto join_index(const T&... ii) const
   -> std::enable_if_t< (sizeof...(ii) > 1), index_type > {
-    return join_index(std::forward_as_tuple(ii...));
+    return join_index(std::array<index_type,sizeof...(ii)>{index_type(ii)...});
   }
 
   template <typename T = std::initializer_list<index_type>, typename... T2>
