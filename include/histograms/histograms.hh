@@ -111,11 +111,17 @@ public:
   }
 
   template <typename T = std::initializer_list<index_type>, typename... T2>
-  const bin_type& bin_at(const T& ii, const T2&... ii2) const {
+  auto bin_at(const T& ii, const T2&... ii2) const -> std::enable_if_t<
+    sizeof...(ii2) || !std::is_convertible<T,index_type>::value,
+    const bin_type&
+  > {
     return bin_at(join_index(ii,ii2...));
   }
   template <typename T = std::initializer_list<index_type>, typename... T2>
-  bin_type& bin_at(const T& ii, const T2&... ii2) {
+  auto bin_at(const T& ii, const T2&... ii2) -> std::enable_if_t<
+    sizeof...(ii2) || !std::is_convertible<T,index_type>::value,
+    bin_type&
+  > {
     return bin_at(join_index(ii,ii2...));
   }
 
