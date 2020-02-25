@@ -1,6 +1,7 @@
 #include <iostream>
 #include <array>
 #include <list>
+#include <memory>
 
 #define TEST(var) \
   std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
@@ -56,19 +57,23 @@ int main(int argc, char* argv[]) {
   TEST(h2.bin_at({4,2}))
 
   cout << endl;
+  // shared axis
+  auto a3 = std::make_shared<histograms::container_axis<>>(
+    std::vector<double>{10,20,30});
   histograms::histogram<
     int,
     std::tuple<
       histograms::uniform_axis<unsigned,true>,
-      histograms::container_axis<> >,
+      decltype(a3) >,
     histograms::bins_container_spec<std::list<int>>
-  > h3({{4,1,5},{10,20,30}});
+  > h3({{4,1,5},a3});
   CHECK(h3.bins().size(), 24)
 
   cout << endl;
   [](const auto&... x){ TEST(__PRETTY_FUNCTION__) }(
     h3,
     h3.axes(),
-    h3.bins()
+    h3.bins(),
+    std::get<1>(h3.axes())
   );
 }

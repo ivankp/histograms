@@ -176,44 +176,6 @@ public:
   }
 };
 
-// Reference axis ===================================================
-
-template <typename AxisT, bool Poly=false>
-class ref_axis final: public axis_base_t< Poly, typename AxisT::edge_type >
-{
-public:
-  using base_type = axis_base_t< Poly, typename AxisT::value_type >;
-  using edge_type = typename base_type::edge_type;
-
-private:
-  const AxisT* _ref;
-
-public:
-  ref_axis(const ref_axis&) = default;
-  ref_axis& operator=(const ref_axis&) = default;
-
-  ref_axis(const AxisT& a): _ref(&a) { }
-
-  index_type nedges() const noexcept { return _ref->nedges(); }
-  index_type nbins() const noexcept { return _ref->nbins(); }
-
-  edge_type edge(index_type i) const noexcept { return _ref->edge(i); }
-  edge_type operator[](index_type i) const noexcept { return edge(i); }
-
-  edge_type min() const noexcept { return _ref->min(); }
-  edge_type max() const noexcept { return _ref->max(); }
-
-  edge_type lower(index_type i) const noexcept { return _ref->lower(i); }
-  edge_type upper(index_type i) const noexcept { return _ref->upper(i); }
-
-  index_type find_bin_index(edge_type x) const noexcept {
-    return _ref->find_bin_index(x);
-  }
-  index_type operator()(edge_type x) const noexcept {
-    return find_bin_index(x);
-  }
-};
-
 } // end namespace histograms
 
 #endif

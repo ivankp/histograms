@@ -33,6 +33,20 @@ struct is_filler_spec<filler_spec<T>> {
   using type = T;
 };
 
+namespace detail {
+
+template <typename T>
+[[using gnu : const, always_inline]] [[nodiscard]]
+inline auto axis_ref(const T& x) -> decltype(x.nedges(),x)
+{ return x; }
+
+template <typename T>
+[[using gnu : const, always_inline]] [[nodiscard]]
+inline auto axis_ref(T x) -> decltype(x->nedges(),axis_ref(*x))
+{ return axis_ref(*x); }
+
+}
+
 template <
   typename Bin = double,
   typename Axes = std::vector<container_axis<std::vector<double>>>,
@@ -57,10 +71,13 @@ private:
   bins_container_type _bins;
 
   void resize_bins() {
-    using namespace containers;
-    if constexpr (is_resizable<bins_container_type,size_t>::value) {
+    if constexpr (
+      containers::is_resizable<bins_container_type,size_t>::value
+    ) {
       index_type n = 1;
-      for_each([&](const auto& a){ n *= a.nedges()+1; },_axes);
+      containers::for_each([&](const auto& a){
+        n *= detail::axis_ref(a).nedges()+1;
+      }, _axes);
       _bins.resize(n);
     }
   }
@@ -98,7 +115,7 @@ public:
     index_type index = 0, n = 1;
     containers::for_each([&](index_type i, const auto& a){
       index += i*n;
-      n *= a.nedges()+1;
+      n *= detail::axis_ref(a).nedges()+1;
     },ii,_axes);
     return index;
   }
@@ -136,8 +153,8 @@ public:
   > {
     index_type index = 0, n = 1;
     containers::for_each([&](const auto& x, const auto& a){
-      index += a.find_bin_index(x)*n;
-      n *= a.nedges()+1;
+      index += detail::axis_ref(a).find_bin_index(x)*n;
+      n *= detail::axis_ref(a).nedges()+1;
     },xs,_axes);
     return index;
   }
