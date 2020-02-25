@@ -2,9 +2,9 @@
 #define IVANP_HISTOGRAMS_HH
 
 #include <type_traits>
-#include <vector>
 #include <tuple>
 #include <array>
+#include <vector>
 #include <string>
 
 #include <histograms/axes.hh>
@@ -12,16 +12,6 @@
 #include <histograms/containers.hh>
 
 namespace histograms {
-
-template <typename T>
-struct named_ptr {
-  using type = T;
-  type *p = nullptr;
-  std::string name;
-
-  type& operator*() const noexcept { return *p; }
-  type* operator->() const noexcept { return p; }
-};
 
 template <typename> struct bins_container_spec { };
 template <typename> struct is_bins_container_spec {
@@ -60,18 +50,17 @@ public:
     is_filler_spec<Specs>...,
     is_filler_spec<filler_spec< bin_filler >>
   >::type;
-  using all_type = std::vector<named_ptr<histogram>>;
   using index_type = histograms::index_type;
 
 private:
   axes_type _axes;
   bins_container_type _bins;
-  static all_type _all;
 
   void resize_bins() {
+    using namespace containers;
     if constexpr (is_resizable<bins_container_type,size_t>::value) {
       index_type n = 1;
-      containers::for_each([&](const auto& a){ n *= a.nedges()+1; },_axes);
+      for_each([&](const auto& a){ n *= a.nedges()+1; },_axes);
       _bins.resize(n);
     }
   }
@@ -85,17 +74,10 @@ public:
 
   histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
   histogram(axes_type&& axes): _axes(std::move(axes)) { resize_bins(); }
-  histogram(std::string name, const axes_type& axes): histogram(axes) {
-    all.emplace_back(this,std::move(name));
-  }
-  histogram(std::string name, axes_type&& axes): histogram(std::move(axes)) {
-    all.emplace_back(this,std::move(name));
-  }
 
   const axes_type& axes() const noexcept { return _axes; }
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
-  static const all_type& all() noexcept { return _all; }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }
@@ -111,10 +93,8 @@ public:
 
   template <typename T = std::initializer_list<index_type>>
   auto join_index(const T& ii) const
-  -> std::enable_if_t< containers::has_size<T>::value, index_type >
+  -> std::enable_if_t< containers::has_either_size<T>::value, index_type >
   {
-    if (containers::size(ii) != containers::size(_axes))
-      throw; // TODO
     index_type index = 0, n = 1;
     containers::for_each([&](index_type i, const auto& a){
       index += i*n;
@@ -146,10 +126,8 @@ public:
 
   template <typename T>
   auto find_bin_index(const T& xs) const -> std::enable_if_t<
-    containers::has_size<const T>::value, index_type
+    containers::has_either_size<const T>::value, index_type
   > {
-    if (containers::size(xs) != containers::size(_axes))
-      throw; // TODO
     index_type index = 0, n = 1;
     containers::for_each([&](const auto& x, const auto& a){
       index += a.find_bin_index(x)*n;
@@ -161,7 +139,7 @@ public:
   template <typename... T>
   auto find_bin_index(const T&... xs) const -> std::enable_if_t<
     (sizeof...(xs) > 1)
-    || !containers::has_size<const head_t<T...>>::value,
+    || !containers::has_either_size<const head_t<T...>>::value,
     index_type
   > {
     return find_bin_index(std::forward_as_tuple(xs...));
