@@ -76,4 +76,6 @@ int main(int argc, char* argv[]) {
     h3.bins(),
     std::get<1>(h3.axes())
   );
+
+  TEST(std::get<1>(h3.axes()).use_count())
 }
