@@ -74,11 +74,13 @@ private:
     if constexpr (
       containers::is_resizable<bins_container_type,size_t>::value
     ) {
-      index_type n = 1;
-      containers::for_each([&](const auto& a){
-        n *= detail::axis_ref(a).nedges()+1;
-      }, _axes);
-      _bins.resize(n);
+      if (containers::size(_axes) > 0) {
+        index_type n = 1;
+        containers::for_each([&](const auto& a){
+          n *= detail::axis_ref(a).nedges()+1;
+        }, _axes);
+        _bins.resize(n);
+      }
     }
   }
 
@@ -95,6 +97,7 @@ public:
   const axes_type& axes() const noexcept { return _axes; }
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
+  auto nbins() const noexcept { return _bins.size(); }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }
