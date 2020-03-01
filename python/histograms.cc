@@ -6,6 +6,16 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#define STR1(x) #x
+#define STR(x) STR1(x)
+
+#define ERROR_PREF __FILE__ ":" STR(__LINE__) ": "
+
+#define ERROR(TYPE,MSG) { \
+  PyErr_SetString(TYPE, ERROR_PREF MSG); \
+  goto error; \
+}
+
 namespace histograms::python {
 
 PyObject* py(double x) { return PyFloat_FromDouble(x); }
@@ -18,13 +28,19 @@ PyObject* py(std::string_view x) {
   return PyUnicode_FromStringAndSize(x.data(),x.size());
 }
 
+void decref(PyObject* x) { Py_DECREF(x); }
+using py_ptr = std::unique_ptr<
+  PyObject,
+  std::integral_constant<std::decay_t<decltype(decref)>,decref>
+>;
+
 template <typename T>
 void destroy(T* x) { x->~T(); }
 
 struct hist {
   PyObject_HEAD
   using type = histogram<
-    PyObject*,
+    py_ptr,
     std::vector< std::shared_ptr<poly_axis_base<double>> >
   >;
   type h;
@@ -44,77 +60,97 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
     decltype(PyLong_AsLong(std::declval<PyObject*>())) i;
     double d;
   };
-  std::vector<double> nums;
+  std::vector<double> edges;
   bool is_float;
   unsigned k = 0;
-  for (PyObject *iter = PyObject_GetIter(args), *arg;
-      (arg = PyIter_Next(iter)); ++k)
+  for (py_ptr iter(PyObject_GetIter(args)), arg;
+      (arg.reset(PyIter_Next(iter.get())), arg); ++k)
   {
-    PyObject_Print(arg,stdout,0);
+    PyObject_Print(arg.get(),stdout,0);
     fprintf(stdout,"\n");
-    PyObject *iter2 = PyObject_GetIter(arg);
-    if (!iter2) throw std::runtime_error("bad iter2");
+    py_ptr iter2(PyObject_GetIter(arg.get()));
+    if (!iter2) ERROR(PyExc_TypeError,"argument is not iterable")
 
-    PyObject *arg2 = PyIter_Next(iter2);
-    if (PyLong_Check(arg2)) {
-      i = PyLong_AsLong(arg2);
-      // if (i==-1) PyErr_Occurred();
+    py_ptr arg2(PyIter_Next(iter2.get()));
+    if (!arg2) ERROR(PyExc_TypeError,"argument is iterable but empty")
+    if (PyLong_Check(arg2.get())) {
+      i = PyLong_AsLong(arg2.get());
+      if (i==-1 && PyErr_Occurred()) goto error;
       is_float = false;
     } else {
-      d = PyFloat_AsDouble(arg2);
-      // if (d==-1) PyErr_Occurred(); // TODO: need to check
+      d = PyFloat_AsDouble(arg2.get());
+      if (d==-1 && PyErr_Occurred()) goto error;
       is_float = true;
     }
 
-    PyObject_Print(arg2,stdout,0);
+    PyObject_Print(arg2.get(),stdout,0);
     fprintf(stdout,"\nis_float = %i\n",is_float);
     if (is_float)
       fprintf(stdout,"x = %f\n",d);
     else
       fprintf(stdout,"x = %li\n",i);
 
-    arg2 = PyIter_Next(iter2);
-    // TODO: need a proper check if iterable
-    // can't just check if iter3 is null
-    PyObject *iter3 = arg2 ? PyObject_GetIter(arg2) : nullptr;
-    if (iter3) { // must be a uniform axis
-      PyObject *arg3 = PyIter_Next(iter3);
-      if (!arg3) throw std::runtime_error("first arg3 missing");
-      nums.push_back(PyFloat_AsDouble(arg3));
+    arg2.reset(PyIter_Next(iter2.get()));
+    if (arg2) {
+      py_ptr iter3(PyObject_GetIter(arg2.get()));
+      if (iter3) { // must be a uniform axis
+        fprintf(stdout,"uniform_axis\n");
 
-      arg3 = PyIter_Next(iter3);
-      if (!arg3) throw std::runtime_error("second arg3 missing");
-      nums.push_back(PyFloat_AsDouble(arg3));
+        py_ptr arg3;
+        for (int j=0; j<2; ++j) {
+          arg3.reset(PyIter_Next(iter3.get()));
+          if (!arg3) goto error_uniform;
+          double x = PyFloat_AsDouble(arg3.get());
+          if (x==-1 && PyErr_Occurred()) goto error;
+          edges.push_back(x);
+        }
 
-      arg3 = PyIter_Next(iter3);
-      if (arg3) throw std::runtime_error("third arg3");
+        arg3.reset(PyIter_Next(iter3.get()));
+        if (arg3) {
+          error_uniform:
+          ERROR(PyExc_TypeError,"axis range must have exactly 2 values")
+        }
 
+        axes.emplace_back(
+          std::make_shared<uniform_axis<double,true>>(
+            (is_float ? index_type(d) : index_type(i)), edges[0], edges[1]
+        ));
+      } else { // must be a container axis
+        PyErr_Clear();
+        fprintf(stdout,"container_axis\n");
+        edges.push_back(is_float ? d : double(i));
+        if (arg2) {
+          do {
+            double x = PyFloat_AsDouble(arg2.get());
+            if (x==-1 && PyErr_Occurred()) goto error;
+            edges.push_back(x);
+          } while ((arg2 = py_ptr(PyIter_Next(iter2.get()))));
+        }
+
+        axes.emplace_back(
+          std::make_shared<container_axis<std::vector<double>,true>>(
+            std::move(edges)
+        ));
+      }
+    } else {
+      double x = (is_float ? index_type(d) : index_type(i));
       axes.emplace_back(
         std::make_shared<uniform_axis<double,true>>(
-          (is_float ? index_type(d) : index_type(i)), nums[0], nums[1]
-      ));
-    } else { // must be a container axis
-      nums.push_back(is_float ? d : double(i));
-      if (arg2) {
-        do nums.push_back(PyFloat_AsDouble(arg2));
-        while ((arg2 = PyIter_Next(iter2)));
-      }
-
-      axes.emplace_back(
-        std::make_shared<container_axis<std::vector<double>,true>>(
-          std::move(nums)
+          0, x, x
       ));
     }
 
-    nums.clear();
+    edges.clear();
   }
 
-  auto& h = self->h;
-  new(&h) hist::type(std::move(axes));
-  for (auto& b : h.bins()) {
+  new(&self->h) hist::type(std::move(axes));
+  for (auto& b : self->h.bins()) {
     b = nullptr;
   }
   return 0;
+
+error:
+  return 1;
 }
 
 PyObject* hist_nbins(hist *self, PyObject *Py_UNUSED(ignored)) {
