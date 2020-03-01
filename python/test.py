@@ -13,3 +13,5 @@ h = histogram([1.,2,3,4,5],[5,(0,5)],[0])
 print("nbins =",h.nbins())
 print("len =",len(h))
 
+h()
+

@@ -167,6 +167,10 @@ PyMethodDef hist_methods[] = {
 };
 
 Py_ssize_t hist_lenfunc(hist *h) { return h->h.nbins(); }
+PyObject* hist_call(hist *self, PyObject *args, PyObject *kwargs) {
+  printf("%s\n",__FUNCTION__);
+  Py_RETURN_NONE;
+}
 
 PySequenceMethods hist_sequence_methods = {
   .sq_length = (lenfunc) hist_lenfunc,
@@ -188,6 +192,7 @@ PyTypeObject hist_pytype = {
   .tp_itemsize = 0,
   .tp_dealloc = (destructor) hist_dealloc,
   .tp_as_sequence = &hist_sequence_methods,
+  .tp_call = (ternaryfunc) hist_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "histogram object",
   .tp_methods = hist_methods,
