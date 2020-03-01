@@ -8,6 +8,7 @@ from histograms import histogram
 # h = histogram([1.,2,3,4,5])
 # h = histogram([5,(0,5)])
 h = histogram([1.,2,3,4,5],[5,(0,5)],[0])
+# h = histogram()
 
 print("nbins =",h.nbins())
 
