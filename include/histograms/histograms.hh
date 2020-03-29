@@ -76,7 +76,7 @@ private:
     ) {
       if (containers::size(_axes) > 0) {
         index_type n = 1;
-        containers::for_each([&](const auto& a){
+        containers::for_each([&n](const auto& a){
           n *= detail::axis_ref(a).nedges()+1;
         }, _axes);
         _bins.resize(n);
@@ -95,6 +95,7 @@ public:
   histogram(axes_type&& axes): _axes(std::move(axes)) { resize_bins(); }
 
   const axes_type& axes() const noexcept { return _axes; }
+  axes_type& axes() noexcept { return _axes; }
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
   auto nbins() const noexcept { return _bins.size(); }

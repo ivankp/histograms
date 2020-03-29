@@ -12,7 +12,7 @@ IVANP_MAKE_OP_TRAIT_2( has_at, std::declval<T&>().at(std::declval<T2&>()) )
 IVANP_MAKE_OP_TRAIT_1( has_size, std::declval<T&>().size() )
 IVANP_MAKE_OP_TRAIT_1( has_tuple_size, std::tuple_size<T>::value )
 IVANP_MAKE_OP_TRAIT_2( is_resizable,
-  std::declval<T&>().resize(std::declval<T2&>()) )
+  std::declval<T&>().resize(std::declval<T2>()) )
 
 template <typename T>
 inline constexpr auto size(T&) noexcept -> decltype(std::tuple_size<T>::value)
