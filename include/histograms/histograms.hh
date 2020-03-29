@@ -45,6 +45,19 @@ template <typename T>
 inline auto axis_ref(T x) -> decltype(x->nedges(),axis_ref(*x))
 { return axis_ref(*x); }
 
+template <typename Axis>
+struct edge_type_from_axis {
+  using type = typename std::decay_t<
+    decltype(axis_ref(std::declval<Axis&>()))
+  >::edge_type;
+};
+
+template <typename Axes>
+using coord_arg_t = typename containers::transform<
+  Axes, detail::edge_type_from_axis >::arg_type;
+
+IVANP_MAKE_OP_TRAIT_1( has_coord_arg, std::declval<coord_arg_t<T>&>() )
+
 }
 
 template <
@@ -179,6 +192,8 @@ public:
     || !containers::has_either_size<const head_t<T...>>::value,
     index_type
   > {
+    // if constexpr (containers::has_tuple_size<axes_type>::value)
+    //   static_assert(std::tuple_size<axes_type>::value == sizeof...(xs));
     return find_bin_index(std::forward_as_tuple(xs...));
   }
 
@@ -215,14 +230,32 @@ public:
   template <typename... T>
   decltype(auto) operator()(const T&... xs) { return fill(xs...); }
 
-  template <typename X, typename... A>
-  decltype(auto) fill(const std::initializer_list<X>& xs, A&&... as) {
+  template <typename X, typename... A,
+    typename = std::enable_if_t<
+      !detail::has_coord_arg<head_t<Axes,X>>::value
+    >
+  >
+  decltype(auto) fill(std::initializer_list<X> xs, A&&... as) {
     return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
   }
-  template <typename X, typename... A>
-  decltype(auto) operator()(const std::initializer_list<X>& xs, A&&... as) {
+  template <typename X, typename... A,
+    typename = std::enable_if_t<
+      !detail::has_coord_arg<head_t<Axes,X>>::value
+    >
+  >
+  decltype(auto) operator()(std::initializer_list<X> xs, A&&... as) {
     return fill(xs,std::forward<A>(as)...);
   }
+
+  template <typename... A, typename X = detail::coord_arg_t<head_t<Axes,A...>>>
+  decltype(auto) fill(const head_t<X>& xs, A&&... as) {
+    return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
+  }
+  template <typename... A, typename X = detail::coord_arg_t<head_t<Axes,A...>>>
+  decltype(auto) operator()(const head_t<X>& xs, A&&... as) {
+    return fill(xs,std::forward<A>(as)...);
+  }
+
 };
 
 } // end namespace histograms

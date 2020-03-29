@@ -55,6 +55,7 @@ int main(int argc, char* argv[]) {
   TEST(h2.find_bin(4,7))
   TEST(h2.bin_at(4,2))
   TEST(h2.bin_at({4,2}))
+  TEST(h2({5,10.5},5.5))
 
   cout << endl;
   // shared axis
@@ -78,4 +79,12 @@ int main(int argc, char* argv[]) {
   );
 
   TEST(std::get<1>(h3.axes()).use_count())
+
+  histograms::histogram<
+    double,
+    std::list<histograms::uniform_axis<double>>
+  > h4({{0,1,10}});
+  CHECK(h4(0.4),1)
+  CHECK(h4({0.4},1.5),2.5)
+  CHECK(h4(0.4,1.5),3.5)
 }

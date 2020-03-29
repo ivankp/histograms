@@ -45,6 +45,7 @@ int main(int argc, char* argv[]) {
   CHECK(h.fill({4.5,15.}), 4)
   CHECK(h.fill({4.5,15.},2.5), 6.5)
   CHECK(h.fill(std::forward_as_tuple(4.5,15),2.1), 8.6)
+  CHECK(h({4.5,15},1.1), 9.7)
 
   histograms::histogram h2({
     {0,1,2,3,4,5},

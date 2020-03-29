@@ -2,6 +2,8 @@
 #define IVANP_CONTAINERS_HH
 
 #include <tuple>
+#include <array>
+#include <vector>
 #include <histograms/traits.hh>
 
 namespace histograms {
@@ -92,6 +94,27 @@ inline void for_each(F&& f, T&&... xs) {
     detail::multiple_iteration::iterator<std::remove_reference_t<T>,0>(xs)...
   );
 }
+
+template <typename T, template<typename> typename F>
+struct transform;
+
+template <typename T, typename Alloc, template<typename> typename F>
+struct transform<std::vector<T,Alloc>,F> {
+  using type = std::vector<typename F<T>::type>;
+  using arg_type = std::initializer_list<typename F<T>::type>;
+};
+
+template <typename... T, template<typename> typename F>
+struct transform<std::tuple<T...>,F> {
+  using type = std::tuple<typename F<T>::type...>;
+  using arg_type = type;
+};
+
+template <typename T, size_t N, template<typename> typename F>
+struct transform<std::array<T,N>,F> {
+  using type = std::array<typename F<T>::type,N>;
+  using arg_type = type;
+};
 
 }}
 
