@@ -21,11 +21,11 @@ template <typename T>
 inline constexpr auto size(T& x) noexcept -> std::enable_if_t<
   !has_tuple_size<T>::value, std::size_t
 > {
-  using std::size;
-  return size(x);
+  return x.size();
 }
 
-IVANP_MAKE_OP_TRAIT_1( has_either_size, size(std::declval<T&>()) )
+template <typename T>
+using has_either_size = std::disjunction<has_size<T>,has_tuple_size<T>>;
 
 template <typename C, typename I>
 inline auto at(C& c, I i) -> decltype(c[i]) { return c[i]; }

@@ -36,12 +36,12 @@ struct is_filler_spec<filler_spec<T>> {
 namespace detail {
 
 template <typename T>
-[[using gnu : const, always_inline]] [[nodiscard]]
+[[nodiscard, gnu::const, gnu::always_inline]]
 inline auto axis_ref(const T& x) -> decltype(x.nedges(),x)
 { return x; }
 
 template <typename T>
-[[using gnu : const, always_inline]] [[nodiscard]]
+[[nodiscard, gnu::const, gnu::always_inline]]
 inline auto axis_ref(T x) -> decltype(x->nedges(),axis_ref(*x))
 { return axis_ref(*x); }
 
@@ -190,18 +190,32 @@ public:
 
   // ----------------------------------------------------------------
 
-  template <typename T = std::initializer_list<index_type>, typename... Args>
-  decltype(auto) fill_at(const T& i, Args&&... args) {
-    return filler_type::fill(bin_at(i),std::forward<Args>(args)...);
+  template <typename I = std::initializer_list<index_type>, typename... A>
+  decltype(auto) fill_at(const I& ii, A&&... as) {
+    return filler_type::fill(bin_at(ii),std::forward<A>(as)...);
   }
 
-  template <typename T, typename... Args>
-  decltype(auto) fill(const T& xs, Args&&... args) {
-    return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
-  }
+  // https://stackoverflow.com/q/60909588/2640636
 
+  template <typename X, typename... A>
+  decltype(auto) fill(const X& xs, A&&... as) {
+    if constexpr (containers::has_either_size<X>::value) {
+      return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
+    } else {
+      return filler_type::fill(find_bin(xs,as...));
+    }
+  }
   template <typename... T>
-  decltype(auto) operator()(T&&... xs) { return fill(std::forward<T>(xs)...); }
+  decltype(auto) operator()(const T&... xs) { return fill(xs...); }
+
+  template <typename X, typename... A>
+  decltype(auto) fill(const std::initializer_list<X>& xs, A&&... as) {
+    return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
+  }
+  template <typename X, typename... A>
+  decltype(auto) operator()(const std::initializer_list<X>& xs, A&&... as) {
+    return fill(xs,std::forward<A>(as)...);
+  }
 };
 
 } // end namespace histograms

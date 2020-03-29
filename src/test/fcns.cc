@@ -29,6 +29,20 @@ int main(int argc, char* argv[]) {
   CHECK(h.join_index({5,2}), 5+2*7)
   // CHECK(h.join_index({5},2), 5+2*7) // wrong
 
-  CHECK(h.bin_at(5), 0)
-  CHECK(h.bin_at(2,5), 0)
+  CHECK(h.fill_at(19), 1)
+  CHECK(h.fill_at({2,5},3.2), 3.2)
+
+  CHECK(h.bin_at(19), 1)
+  CHECK(h.bin_at(2,5), 3.2)
+
+  CHECK(h.find_bin_index(4.5,15), 19)
+  CHECK(h.find_bin(4.5,15), 1)
+
+  CHECK(h.fill_at({5,2}), 2)
+
+  CHECK(h.fill(4.5,15), 3)
+  CHECK(h.fill({4.5,15.}), 4)
+  CHECK(h.fill({4.5,15.},2.5), 6.5)
+  CHECK(h.fill(std::forward_as_tuple(4.5,15),2.1), 8.6)
+
 }
