@@ -104,6 +104,8 @@ public:
   auto   end() const noexcept { return _bins.end(); }
   auto   end() noexcept { return _bins.end(); }
 
+  // ----------------------------------------------------------------
+
   const bin_type& bin_at(index_type i) const {
     return containers::at(_bins,i);
   }
@@ -111,10 +113,14 @@ public:
     return containers::at(_bins,i);
   }
 
+  index_type join_index(index_type i) const noexcept { return i; }
+
   template <typename T = std::initializer_list<index_type>>
-  auto join_index(const T& ii) const
-  -> std::enable_if_t< containers::has_either_size<T>::value, index_type >
-  {
+  auto join_index(const T& ii) const -> std::enable_if_t<
+    containers::has_either_size<T>::value &&
+    !std::is_convertible<T,index_type>::value,
+    index_type
+  > {
     index_type index = 0, n = 1;
     containers::for_each([&](index_type i, const auto& a){
       index += i*n;
@@ -123,32 +129,34 @@ public:
     return index;
   }
 
-  index_type join_index(index_type i) const { return i; }
   template <typename... T>
   auto join_index(const T&... ii) const
   -> std::enable_if_t< (sizeof...(ii) > 1), index_type > {
+    // array is faster here because of for_each
     return join_index(std::array<index_type,sizeof...(ii)>{index_type(ii)...});
   }
 
-  template <typename T = std::initializer_list<index_type>, typename... T2>
-  auto bin_at(const T& ii, const T2&... ii2) const -> std::enable_if_t<
-    sizeof...(ii2) || !std::is_convertible<T,index_type>::value,
-    const bin_type&
-  > {
-    return bin_at(join_index(ii,ii2...));
+  const bin_type& bin_at(std::initializer_list<index_type> ii) const {
+    return bin_at(join_index(ii));
   }
-  template <typename T = std::initializer_list<index_type>, typename... T2>
-  auto bin_at(const T& ii, const T2&... ii2) -> std::enable_if_t<
-    sizeof...(ii2) || !std::is_convertible<T,index_type>::value,
-    bin_type&
-  > {
-    return bin_at(join_index(ii,ii2...));
+  bin_type& bin_at(std::initializer_list<index_type> ii) {
+    return bin_at(join_index(ii));
+  }
+  template <typename... T>
+  const bin_type& bin_at(const T&... ii) const {
+    return bin_at(join_index(ii...));
+  }
+  template <typename... T>
+  bin_type& bin_at(const T&... ii) {
+    return bin_at(join_index(ii...));
   }
 
   template <typename T = std::initializer_list<index_type>>
   const bin_type& operator[](const T& ii) const { return bin_at(ii); }
   template <typename T = std::initializer_list<index_type>>
   bin_type& operator[](const T& ii) { return bin_at(ii); }
+
+  // ----------------------------------------------------------------
 
   template <typename T>
   auto find_bin_index(const T& xs) const -> std::enable_if_t<
@@ -164,7 +172,7 @@ public:
 
   template <typename... T>
   auto find_bin_index(const T&... xs) const -> std::enable_if_t<
-    (sizeof...(xs) > 1)
+    (sizeof...(T) > 1)
     || !containers::has_either_size<const head_t<T...>>::value,
     index_type
   > {
@@ -179,6 +187,8 @@ public:
   bin_type& find_bin(const T&... xs) {
     return bin_at(find_bin_index(xs...));
   }
+
+  // ----------------------------------------------------------------
 
   template <typename T = std::initializer_list<index_type>, typename... Args>
   decltype(auto) fill_at(const T& i, Args&&... args) {

@@ -52,8 +52,8 @@ class iterator<T,I,
   static constexpr auto size = std::tuple_size<T>::value;
 public:
   iterator(T& x): x(x) { }
-  constexpr decltype(auto) operator*() { return get<I>(x); }
-  constexpr decltype(auto) operator++() { return iterator<T,I+1>(x); }
+  decltype(auto) operator*() { return get<I>(x); }
+  decltype(auto) operator++() { return iterator<T,I+1>(x); }
   constexpr bool operator!() const noexcept { return I >= size; }
   static constexpr bool is_known_last = (I+1 >= size);
   static constexpr bool is_tuple = true;

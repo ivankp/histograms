@@ -139,8 +139,9 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
       edges.clear();
     }
 
-    new(&self->h) hist::type(std::move(axes));
-    for (auto& b : self->h.bins()) {
+    auto& h = self->h;
+    new(&h) hist::type(std::move(axes));
+    for (auto& b : h.bins()) {
       b = nullptr;
     }
     return 0;
