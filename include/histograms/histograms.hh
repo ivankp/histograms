@@ -137,6 +137,8 @@ public:
     return join_index(std::array<index_type,sizeof...(ii)>{index_type(ii)...});
   }
 
+  index_type join_index() const { return 0; }
+
   const bin_type& bin_at(std::initializer_list<index_type> ii) const {
     return bin_at(join_index(ii));
   }
@@ -180,6 +182,8 @@ public:
     return find_bin_index(std::forward_as_tuple(xs...));
   }
 
+  index_type find_bin_index() const { return 0; }
+
   template <typename... T>
   const bin_type& find_bin(const T&... xs) const {
     return bin_at(find_bin_index(xs...));
@@ -198,9 +202,11 @@ public:
 
   // https://stackoverflow.com/q/60909588/2640636
 
+  decltype(auto) fill() { return filler_type::fill(find_bin()); }
+
   template <typename X, typename... A>
   decltype(auto) fill(const X& xs, A&&... as) {
-    if constexpr (containers::has_either_size<X>::value) {
+    if constexpr (containers::has_either_size<const X>::value) {
       return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
     } else {
       return filler_type::fill(find_bin(xs,as...));

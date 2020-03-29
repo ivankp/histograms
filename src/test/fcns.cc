@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
   CHECK(h.join_index(5,2), 5+2*7)
   CHECK(h.join_index({5,2}), 5+2*7)
   // CHECK(h.join_index({5},2), 5+2*7) // wrong
+  CHECK(h.join_index(5,2,150), 5+2*7)
 
   CHECK(h.fill_at(19), 1)
   CHECK(h.fill_at({2,5},3.2), 3.2)
@@ -44,5 +45,19 @@ int main(int argc, char* argv[]) {
   CHECK(h.fill({4.5,15.}), 4)
   CHECK(h.fill({4.5,15.},2.5), 6.5)
   CHECK(h.fill(std::forward_as_tuple(4.5,15),2.1), 8.6)
+
+  histograms::histogram h2({
+    {0,1,2,3,4,5},
+    {1,10,100},
+    {4,5,7}
+  });
+  TEST(h2(-1,0))
+  TEST(h2(-1,0,0))
+  TEST(h2())
+
+  TEST(h2.bin_at(0,0,0))
+  TEST(h2.bin_at(0,0,0,5))
+  TEST(h2.bin_at(0))
+  TEST(h2.bin_at())
 
 }
