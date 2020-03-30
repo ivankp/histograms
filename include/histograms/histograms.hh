@@ -37,12 +37,12 @@ namespace detail {
 
 template <typename T>
 [[nodiscard, gnu::const, gnu::always_inline]]
-inline auto axis_ref(const T& x) -> decltype(x.nedges(),x)
+inline auto axis_ref(T& x) -> decltype(x.nedges(),x)
 { return x; }
 
 template <typename T>
 [[nodiscard, gnu::const, gnu::always_inline]]
-inline auto axis_ref(T x) -> decltype(x->nedges(),axis_ref(*x))
+inline auto axis_ref(T& x) -> decltype(x->nedges(),axis_ref(*x))
 { return axis_ref(*x); }
 
 template <typename Axis>
