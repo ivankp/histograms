@@ -1,4 +1,4 @@
-#include <memory>
+// #include <memory>
 #include <string_view>
 #include <stdexcept>
 #include <histograms/histograms.hh>
@@ -39,15 +39,49 @@ PyObject* py(std::string_view x) {
   return PyUnicode_FromStringAndSize(x.data(),x.size());
 }
 
-void decref(PyObject* x) { Py_DECREF(x); }
+template <typename T>
+class my_py_ptr {
+  static_assert(alignof(T)==alignof(PyObject));
+  // static_assert(
+  //   std::disjunction<
+  //     std::is_same<T,PyObject>,
+  //     std::is_same<decltype(T::ob_base),PyObject>
+  //   >::value);
+  T* p;
+  void incref() { Py_INCREF(reinterpret_cast<PyObject*>(p)); }
+  void decref() { Py_DECREF(reinterpret_cast<PyObject*>(p)); }
+public:
+  my_py_ptr(): p(nullptr) { }
+  my_py_ptr(T* p): p(p) { incref(); }
+  my_py_ptr(const my_py_ptr& o): p(o.p) { incref(); }
+  my_py_ptr& operator=(const my_py_ptr& o) {
+    if (p != o.p) {
+      if (p) decref();
+      p = o.p;
+      incref();
+    }
+    return *this;
+  }
+  my_py_ptr(my_py_ptr&& o): p(o.p) { o.p = nullptr; }
+  my_py_ptr& operator=(my_py_ptr&& o) {
+    p = o.p;
+    o.p = nullptr;
+    return *this;
+  }
+  ~my_py_ptr() { if (p) decref(); }
 
-using py_ptr = std::unique_ptr<
-  PyObject,
-  std::integral_constant<std::decay_t<decltype(decref)>,decref>
->;
+  T* get() { return p; }
+  const T* get() const { return p; }
+  T* operator->() { return p; }
+  const T* operator->() const { return p; }
+  T& operator*() { return *p; }
+  const T& operator*() const { return *p; }
+};
+
+using py_ptr = my_py_ptr<PyObject>;
 
 template <typename T>
-T unpy(const py_ptr& p) {
+T unpy(py_ptr p) {
   if constexpr (std::is_same_v<T,double>) {
     return PyFloat_AsDouble(p.get());
   } else
@@ -66,13 +100,13 @@ T unpy(const py_ptr& p) {
 }
 
 template <typename T>
-T unpy_check(const py_ptr& p) {
+T unpy_check(py_ptr p) {
   const auto x = unpy<T>(p);
   if (x==(decltype(x))-1 && PyErr_Occurred()) throw existing_error{};
   return x;
 }
 
-py_ptr next(const py_ptr& iter) { return py_ptr(PyIter_Next(iter.get())); }
+py_ptr next(py_ptr iter) { return PyIter_Next(iter.get()); }
 
 template <typename T>
 void destroy(T* x) { x->~T(); }
@@ -80,26 +114,48 @@ void destroy(T* x) { x->~T(); }
 template <typename T>
 void dealloc(T *self) {
   static_assert(alignof(T)==alignof(PyObject));
+  // call destructor
   destroy(self);
+  // free memory
   Py_TYPE(self)->tp_free(reinterpret_cast<PyObject*>(self));
+}
+
+template <typename T>
+int init(T *self, PyObject *args, PyObject *kwargs) {
+  try {
+    new(self) T(args,kwargs);
+  } catch (const existing_error& e) {
+    return 1;
+  } catch (const error& e) {
+    PyErr_SetString(e.type(),e.what());
+    return 1;
+  } catch (const std::exception& e) {
+    PyErr_SetString(PyExc_RuntimeError,e.what());
+    return 1;
+  }
+  return 0;
 }
 
 namespace axis {
 
 struct py_axis {
   PyObject_HEAD
-  using type = poly_axis_base<double>*;
-  type axis = nullptr;
+  using type = poly_axis_base<double>;
+  type* axis = nullptr;
 
-  py_axis() {
+  py_axis(PyObject *args, PyObject *kwargs) {
     TEST(__PRETTY_FUNCTION__)
+    // axis = new type();
   }
   ~py_axis() {
     TEST(__PRETTY_FUNCTION__)
     if (axis) delete axis;
   }
 
-  type operator->() { return axis; }
+  type* operator->() { return axis; }
+  const type* operator->() const { return axis; }
+  type& operator*() { return *axis; }
+  const type& operator*() const { return *axis; }
 };
 
 } // end axis namespace
@@ -108,19 +164,15 @@ namespace hist {
 
 struct py_hist {
   PyObject_HEAD
-  using type = histogram<
-    py_ptr,
-    std::vector< std::shared_ptr<poly_axis_base<double>> >
-  >;
-  // using type = histogram< py_ptr, std::vector<axis::py_axis::type> >;
+  // using type = histogram<
+  //   py_ptr,
+  //   std::vector< std::shared_ptr<poly_axis_base<double>> >
+  // >;
+  using type = histogram< py_ptr, std::vector<my_py_ptr<axis::py_axis>> >;
   type h;
 
-  // dealloc() calls default py_hist::~py_hist()
-  // which picks up h
-};
-
-int init(py_hist *self, PyObject *args, PyObject *kwargs) {
-  try {
+  py_hist(PyObject *args, PyObject *kwargs) {
+    /*
     py_hist::type::axes_type axes;
     union {
       long long ix;
@@ -193,18 +245,9 @@ int init(py_hist *self, PyObject *args, PyObject *kwargs) {
     for (auto& b : h.bins()) {
       b = nullptr;
     }
-    return 0;
-
-  } catch (const existing_error& e) {
-    return 1;
-  } catch (const error& e) {
-    PyErr_SetString(e.type(),e.what());
-    return 1;
-  } catch (const std::exception& e) {
-    PyErr_SetString(PyExc_RuntimeError,e.what());
-    return 1;
+    */
   }
-}
+};
 
 PyObject* nbins(py_hist *self, PyObject *Py_UNUSED(ignored)) {
   return py(self->h.nbins());
@@ -248,7 +291,7 @@ PyTypeObject py_type = {
   .tp_doc = "histogram object",
   .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = (::initproc) init,
+  .tp_init = (::initproc) init<py_hist>,
   .tp_new = PyType_GenericNew,
 };
 
