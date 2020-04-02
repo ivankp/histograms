@@ -123,8 +123,8 @@ int init(py_hist *self, PyObject *args, PyObject *kwargs) {
   try {
     py_hist::type::axes_type axes;
     union {
-      unsigned long long i;
-      double d;
+      long long ix;
+      double dx;
     };
     std::vector<double> edges;
     bool is_float;
@@ -137,10 +137,10 @@ int init(py_hist *self, PyObject *args, PyObject *kwargs) {
       if (!arg2) throw error(PyExc_TypeError,
         "argument is iterable but empty");
       if (PyLong_Check(arg2.get())) {
-        i = unpy_check<unsigned long long>(arg2);
+        ix = unpy_check<decltype(ix)>(arg2);
         is_float = false;
       } else {
-        d = unpy_check<double>(arg2);
+        dx = unpy_check<double>(arg2);
         is_float = true;
       }
 
@@ -162,11 +162,11 @@ int init(py_hist *self, PyObject *args, PyObject *kwargs) {
 
           axes.emplace_back(
             std::make_shared<uniform_axis<double,true>>(
-              (is_float ? index_type(d) : index_type(i)), edges[0], edges[1]
+              (is_float ? index_type(dx) : index_type(ix)), edges[0], edges[1]
           ));
         } else { // must be a container axis
           PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
-          edges.push_back(is_float ? d : double(i));
+          edges.push_back(is_float ? dx : double(ix));
           if (arg2) {
             do edges.push_back(unpy_check<double>(arg2));
             while ((arg2 = next(iter2)));
@@ -178,7 +178,7 @@ int init(py_hist *self, PyObject *args, PyObject *kwargs) {
           ));
         }
       } else {
-        const double x = (is_float ? index_type(d) : index_type(i));
+        const double x = (is_float ? dx : double(ix));
         axes.emplace_back(
           std::make_shared<uniform_axis<double,true>>(
             0, x, x
