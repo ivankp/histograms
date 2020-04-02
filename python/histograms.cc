@@ -11,9 +11,13 @@
 
 // #define ERROR_PREF __FILE__ ":" STR(__LINE__) ": "
 
+#include <iostream>
+#define TEST(var) \
+  std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
+
 namespace histograms::python {
 
-class occured_error { };
+class existing_error { };
 
 class error: public std::runtime_error {
   PyObject* _type;
@@ -24,9 +28,11 @@ public:
 };
 
 PyObject* py(double x) { return PyFloat_FromDouble(x); }
-PyObject* py(float  x) { return PyFloat_FromDouble((double)x); }
+PyObject* py(float  x) { return PyFloat_FromDouble(x); }
 PyObject* py(long   x) { return PyLong_FromLong(x); }
+PyObject* py(long long x) { return PyLong_FromLongLong(x); }
 PyObject* py(unsigned long x) { return PyLong_FromUnsignedLong(x); }
+PyObject* py(unsigned long long x) { return PyLong_FromUnsignedLongLong(x); }
 // PyObject* py(size_t x) { return PyLong_FromSize_t(x); }
 PyObject* py(std::string_view x) {
   // return PyBytes_FromStringAndSize(x.data(),x.size());
@@ -34,19 +40,35 @@ PyObject* py(std::string_view x) {
 }
 
 void decref(PyObject* x) { Py_DECREF(x); }
+
 using py_ptr = std::unique_ptr<
   PyObject,
   std::integral_constant<std::decay_t<decltype(decref)>,decref>
 >;
 
-auto as_double_check(const py_ptr& p) {
-  const auto x = PyFloat_AsDouble(p.get());
-  if (x==-1 && PyErr_Occurred()) throw occured_error{};
-  return x;
+template <typename T>
+T unpy(const py_ptr& p) {
+  if constexpr (std::is_same_v<T,double>) {
+    return PyFloat_AsDouble(p.get());
+  } else
+  if constexpr (std::is_same_v<T,long>) {
+    return PyLong_AsLong(p.get());
+  } else
+  if constexpr (std::is_same_v<T,unsigned long>) {
+    return PyLong_AsUnsignedLong(p.get());
+  } else
+  if constexpr (std::is_same_v<T,long long>) {
+    return PyLong_AsLongLong(p.get());
+  } else
+  if constexpr (std::is_same_v<T,unsigned long long>) {
+    return PyLong_AsUnsignedLongLong(p.get());
+  }
 }
-auto as_long_check(const py_ptr& p) {
-  const auto x = PyLong_AsLong(p.get());
-  if (x==-1 && PyErr_Occurred()) throw occured_error{};
+
+template <typename T>
+T unpy_check(const py_ptr& p) {
+  const auto x = unpy<T>(p);
+  if (x==(decltype(x))-1 && PyErr_Occurred()) throw existing_error{};
   return x;
 }
 
@@ -55,26 +77,53 @@ py_ptr next(const py_ptr& iter) { return py_ptr(PyIter_Next(iter.get())); }
 template <typename T>
 void destroy(T* x) { x->~T(); }
 
-struct hist {
+template <typename T>
+void dealloc(T *self) {
+  static_assert(alignof(T)==alignof(PyObject));
+  destroy(self);
+  Py_TYPE(self)->tp_free(reinterpret_cast<PyObject*>(self));
+}
+
+namespace axis {
+
+struct py_axis {
+  PyObject_HEAD
+  using type = poly_axis_base<double>*;
+  type axis = nullptr;
+
+  py_axis() {
+    TEST(__PRETTY_FUNCTION__)
+  }
+  ~py_axis() {
+    TEST(__PRETTY_FUNCTION__)
+    if (axis) delete axis;
+  }
+
+  type operator->() { return axis; }
+};
+
+} // end axis namespace
+
+namespace hist {
+
+struct py_hist {
   PyObject_HEAD
   using type = histogram<
     py_ptr,
     std::vector< std::shared_ptr<poly_axis_base<double>> >
   >;
+  // using type = histogram< py_ptr, std::vector<axis::py_axis::type> >;
   type h;
+
+  // dealloc() calls default py_hist::~py_hist()
+  // which picks up h
 };
 
-void hist_dealloc(hist *self) {
-  static_assert(alignof(hist)==alignof(PyObject));
-  destroy(&self->h);
-  Py_TYPE(self)->tp_free(reinterpret_cast<PyObject*>(self));
-}
-
-int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
+int init(py_hist *self, PyObject *args, PyObject *kwargs) {
   try {
-    hist::type::axes_type axes;
+    py_hist::type::axes_type axes;
     union {
-      decltype(PyLong_AsLong(std::declval<PyObject*>())) i;
+      unsigned long long i;
       double d;
     };
     std::vector<double> edges;
@@ -82,16 +131,16 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
     unsigned k = 0;
     for (py_ptr iter(PyObject_GetIter(args)), arg; (arg = next(iter)); ++k) {
       py_ptr iter2(PyObject_GetIter(arg.get()));
-      if (!iter2) throw occured_error{};
+      if (!iter2) throw existing_error{};
 
       py_ptr arg2 = next(iter2);
       if (!arg2) throw error(PyExc_TypeError,
         "argument is iterable but empty");
       if (PyLong_Check(arg2.get())) {
-        i = as_long_check(arg2);
+        i = unpy_check<unsigned long long>(arg2);
         is_float = false;
       } else {
-        d = as_double_check(arg2);
+        d = unpy_check<double>(arg2);
         is_float = true;
       }
 
@@ -104,7 +153,7 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
             arg3 = next(iter3);
             if (!arg3) throw error(PyExc_TypeError,
               "axis range must have exactly 2 values");
-            edges.push_back(as_double_check(arg3));
+            edges.push_back(unpy_check<double>(arg3));
           }
 
           arg3 = next(iter3);
@@ -119,7 +168,7 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
           PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
           edges.push_back(is_float ? d : double(i));
           if (arg2) {
-            do edges.push_back(as_double_check(arg2));
+            do edges.push_back(unpy_check<double>(arg2));
             while ((arg2 = next(iter2)));
           }
 
@@ -140,13 +189,13 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
     }
 
     auto& h = self->h;
-    new(&h) hist::type(std::move(axes));
+    new(&h) py_hist::type(std::move(axes));
     for (auto& b : h.bins()) {
       b = nullptr;
     }
     return 0;
 
-  } catch (const occured_error& e) {
+  } catch (const existing_error& e) {
     return 1;
   } catch (const error& e) {
     PyErr_SetString(e.type(),e.what());
@@ -157,24 +206,25 @@ int hist_init(hist *self, PyObject *args, PyObject *kwargs) {
   }
 }
 
-PyObject* hist_nbins(hist *self, PyObject *Py_UNUSED(ignored)) {
+PyObject* nbins(py_hist *self, PyObject *Py_UNUSED(ignored)) {
   return py(self->h.nbins());
 }
 
-PyMethodDef hist_methods[] = {
-  { "nbins", (PyCFunction) hist_nbins, METH_NOARGS,
+PyMethodDef methods[] = {
+  { "nbins", (PyCFunction) nbins, METH_NOARGS,
     "total number of histogram bins, including overflow" },
   { nullptr }
 };
 
-Py_ssize_t hist_lenfunc(hist *h) { return h->h.nbins(); }
-PyObject* hist_call(hist *self, PyObject *args, PyObject *kwargs) {
-  printf("%s\n",__FUNCTION__);
+Py_ssize_t lenfunc(py_hist *h) { return h->h.nbins(); }
+
+PyObject* call(py_hist *self, PyObject *args, PyObject *kwargs) {
+  printf("%s\n",__PRETTY_FUNCTION__);
   Py_RETURN_NONE;
 }
 
-PySequenceMethods hist_sequence_methods = {
-  .sq_length = (lenfunc) hist_lenfunc,
+PySequenceMethods sq_methods = {
+  .sq_length = (::lenfunc) lenfunc,
   // binaryfunc sq_concat;
   // ssizeargfunc sq_repeat;
   // ssizeargfunc sq_item;
@@ -186,21 +236,23 @@ PySequenceMethods hist_sequence_methods = {
   // ssizeargfunc sq_inplace_repeat;
 };
 
-PyTypeObject hist_pytype = {
+PyTypeObject py_type = {
   PyVarObject_HEAD_INIT(nullptr, 0)
   .tp_name = "histograms.histogram",
-  .tp_basicsize = sizeof(hist),
+  .tp_basicsize = sizeof(py_hist),
   .tp_itemsize = 0,
-  .tp_dealloc = (destructor) hist_dealloc,
-  .tp_as_sequence = &hist_sequence_methods,
-  .tp_call = (ternaryfunc) hist_call,
+  .tp_dealloc = (::destructor) dealloc<py_hist>,
+  .tp_as_sequence = &sq_methods,
+  .tp_call = (::ternaryfunc) call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "histogram object",
-  .tp_methods = hist_methods,
+  .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = (initproc) hist_init,
+  .tp_init = (::initproc) init,
   .tp_new = PyType_GenericNew,
 };
+
+} // end hist namespace
 
 /*
 PyMethodDef methods[] = {
@@ -218,23 +270,36 @@ PyModuleDef module = {
   // methods
 };
 
-} // end namespace
+} // end python namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
-  using namespace histograms::python;
+  static constexpr std::array<
+    std::tuple<PyTypeObject*,const char*>, 1
+  > py_types {{
+    { &histograms::python::hist::py_type, "histogram" }
+  }};
 
-  if (PyType_Ready(&hist_pytype) < 0) return nullptr;
+  for (const auto& py_type : py_types) {
+    if (PyType_Ready(std::get<0>(py_type)) < 0) return nullptr;
+  }
 
-  PyObject* m = PyModule_Create(&module);
+  PyObject* m = PyModule_Create(&histograms::python::module);
   if (!m) return nullptr;
 
-  Py_INCREF(&hist_pytype);
-  if ( PyModule_AddObject(
-    m, "histogram", reinterpret_cast<PyObject*>(&hist_pytype) ) < 0
-  ) {
-    Py_DECREF(&hist_pytype);
-    Py_DECREF(m);
-    return nullptr;
+  unsigned n = 0;
+  for (const auto& py_type : py_types) {
+    Py_INCREF(std::get<0>(py_type));
+    ++n;
+    if ( PyModule_AddObject(
+      m, std::get<1>(py_type),
+      reinterpret_cast<PyObject*>(std::get<0>(py_type)) ) < 0
+    ) {
+      do {
+        Py_DECREF(std::get<0>(py_types[--n]));
+      } while (n);
+      Py_DECREF(m);
+      return nullptr;
+    }
   }
 
   return m;
