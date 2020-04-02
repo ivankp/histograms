@@ -40,9 +40,9 @@ template <typename T>
 inline auto axis_ref(T& x) -> decltype(x.nedges(),x)
 { return x; }
 
-template <typename T>
+template <typename T, decltype(std::declval<T&>()->nedges(),int{}) = 0>
 [[nodiscard, gnu::const, gnu::always_inline]]
-inline auto axis_ref(T& x) -> decltype(x->nedges(),axis_ref(*x))
+inline decltype(auto) axis_ref(T& x)
 { return axis_ref(*x); }
 
 template <typename Axis>
