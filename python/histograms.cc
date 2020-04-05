@@ -1,6 +1,7 @@
 // #include <memory>
 #include <string_view>
 #include <stdexcept>
+#include <memory>
 #include <histograms/histograms.hh>
 
 #define PY_SSIZE_T_CLEAN
@@ -27,6 +28,19 @@ public:
   error(PyObject* type, const T& arg): runtime_error(arg), _type(type) { }
   PyObject* type() const { return _type; }
 };
+
+void lipp() noexcept { // https://youtu.be/-amJL3AyADI
+  try {
+    throw;
+  } catch (const existing_error&) {
+  } catch (const error& e) {
+    PyErr_SetString(e.type(),e.what());
+  } catch (const std::exception& e) {
+    PyErr_SetString(PyExc_RuntimeError,e.what());
+  } catch (...) {
+    PyErr_SetString(PyExc_RuntimeError,"unknown error");
+  }
+}
 
 [[maybe_unused]] PyObject* py(double x) { return PyFloat_FromDouble(x); }
 [[maybe_unused]] PyObject* py(float  x) { return PyFloat_FromDouble(x); }
@@ -118,7 +132,7 @@ template <typename T>
 void destroy(T* x) noexcept { x->~T(); }
 
 template <typename T>
-void dealloc(T *self) {
+void dealloc(T *self) noexcept {
   static_assert(alignof(T)==alignof(PyObject));
   // call destructor
   destroy(self);
@@ -127,16 +141,11 @@ void dealloc(T *self) {
 }
 
 template <typename T>
-int init(T *self, PyObject *args, PyObject *kwargs) {
+int init(T *self, PyObject *args, PyObject *kwargs) noexcept {
   try {
     new(self) T(args,kwargs);
-  } catch (const existing_error& e) {
-    return 1;
-  } catch (const error& e) {
-    PyErr_SetString(e.type(),e.what());
-    return 1;
-  } catch (const std::exception& e) {
-    PyErr_SetString(PyExc_RuntimeError,e.what());
+  } catch (...) {
+    lipp();
     return 1;
   }
   return 0;
@@ -146,20 +155,18 @@ namespace axis {
 
 struct py_axis {
   PyObject_HEAD
+
   using type = poly_axis_base<double>;
-  type* axis = nullptr;
+  std::unique_ptr<type> axis;
 
   py_axis(PyObject *args, PyObject *kwargs) {
     TEST(__PRETTY_FUNCTION__)
     // axis = new type();
-  }
-  ~py_axis() {
-    TEST(__PRETTY_FUNCTION__)
-    if (axis) delete axis;
+    // axis = std::make_unique<>();
   }
 
-  type* operator->() { return axis; }
-  const type* operator->() const { return axis; }
+  type* operator->() { return axis.get(); }
+  const type* operator->() const { return axis.get(); }
   type& operator*() { return *axis; }
   const type& operator*() const { return *axis; }
 };
@@ -170,6 +177,7 @@ namespace hist {
 
 struct py_hist {
   PyObject_HEAD
+
   // using type = histogram<
   //   py_ptr,
   //   std::vector< std::shared_ptr<poly_axis_base<double>> >
