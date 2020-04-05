@@ -15,7 +15,8 @@
 #define TEST(var) \
   std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
 
-namespace histograms::python {
+namespace histograms {
+namespace {
 
 class existing_error { };
 
@@ -27,14 +28,16 @@ public:
   PyObject* type() const { return _type; }
 };
 
-PyObject* py(double x) { return PyFloat_FromDouble(x); }
-PyObject* py(float  x) { return PyFloat_FromDouble(x); }
-PyObject* py(long   x) { return PyLong_FromLong(x); }
-PyObject* py(long long x) { return PyLong_FromLongLong(x); }
-PyObject* py(unsigned long x) { return PyLong_FromUnsignedLong(x); }
-PyObject* py(unsigned long long x) { return PyLong_FromUnsignedLongLong(x); }
+[[maybe_unused]] PyObject* py(double x) { return PyFloat_FromDouble(x); }
+[[maybe_unused]] PyObject* py(float  x) { return PyFloat_FromDouble(x); }
+[[maybe_unused]] PyObject* py(long   x) { return PyLong_FromLong(x); }
+[[maybe_unused]] PyObject* py(long long x) { return PyLong_FromLongLong(x); }
+[[maybe_unused]] PyObject* py(unsigned long x) { return PyLong_FromUnsignedLong(x); }
+[[maybe_unused]] PyObject* py(unsigned long long x) {
+  return PyLong_FromUnsignedLongLong(x);
+}
 // PyObject* py(size_t x) { return PyLong_FromSize_t(x); }
-PyObject* py(std::string_view x) {
+[[maybe_unused]] PyObject* py(std::string_view x) {
   // return PyBytes_FromStringAndSize(x.data(),x.size());
   return PyUnicode_FromStringAndSize(x.data(),x.size());
 }
@@ -51,8 +54,11 @@ class my_py_ptr {
   void incref() { Py_INCREF(reinterpret_cast<PyObject*>(p)); }
   void decref() { Py_DECREF(reinterpret_cast<PyObject*>(p)); }
 public:
-  my_py_ptr(): p(nullptr) { }
-  my_py_ptr(T* p): p(p) { incref(); }
+  my_py_ptr() noexcept: p(nullptr) { }
+  explicit my_py_ptr(T* p) noexcept: p(p) {
+    // should not increment reference count here
+    // because it may have already been incremented
+  }
   my_py_ptr(const my_py_ptr& o): p(o.p) { incref(); }
   my_py_ptr& operator=(const my_py_ptr& o) {
     if (p != o.p) {
@@ -62,20 +68,20 @@ public:
     }
     return *this;
   }
-  my_py_ptr(my_py_ptr&& o): p(o.p) { o.p = nullptr; }
-  my_py_ptr& operator=(my_py_ptr&& o) {
+  my_py_ptr(my_py_ptr&& o) noexcept: p(o.p) { o.p = nullptr; }
+  my_py_ptr& operator=(my_py_ptr&& o) noexcept {
     p = o.p;
     o.p = nullptr;
     return *this;
   }
   ~my_py_ptr() { if (p) decref(); }
 
-  T* get() { return p; }
-  const T* get() const { return p; }
-  T* operator->() { return p; }
-  const T* operator->() const { return p; }
-  T& operator*() { return *p; }
-  const T& operator*() const { return *p; }
+  T* get() noexcept { return p; }
+  const T* get() const noexcept { return p; }
+  T* operator->() noexcept { return p; }
+  const T* operator->() const noexcept { return p; }
+  T& operator*() noexcept { return *p; }
+  const T& operator*() const noexcept { return *p; }
 };
 
 using py_ptr = my_py_ptr<PyObject>;
@@ -106,10 +112,10 @@ T unpy_check(py_ptr p) {
   return x;
 }
 
-py_ptr next(py_ptr iter) { return PyIter_Next(iter.get()); }
+py_ptr next(py_ptr iter) { return py_ptr(PyIter_Next(iter.get())); }
 
 template <typename T>
-void destroy(T* x) { x->~T(); }
+void destroy(T* x) noexcept { x->~T(); }
 
 template <typename T>
 void dealloc(T *self) {
@@ -305,7 +311,7 @@ PyMethodDef methods[] = {
 };
 */
 
-PyModuleDef module = {
+PyModuleDef py_module = {
   PyModuleDef_HEAD_INIT,
   .m_name = "histograms",
   .m_doc = "Python bindings for the histograms library",
@@ -313,20 +319,21 @@ PyModuleDef module = {
   // methods
 };
 
-} // end python namespace
+}
+} // end histograms namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
   static constexpr std::array<
     std::tuple<PyTypeObject*,const char*>, 1
   > py_types {{
-    { &histograms::python::hist::py_type, "histogram" }
+    { &histograms::hist::py_type, "histogram" }
   }};
 
   for (const auto& py_type : py_types) {
     if (PyType_Ready(std::get<0>(py_type)) < 0) return nullptr;
   }
 
-  PyObject* m = PyModule_Create(&histograms::python::module);
+  PyObject* m = PyModule_Create(&histograms::py_module);
   if (!m) return nullptr;
 
   unsigned n = 0;
