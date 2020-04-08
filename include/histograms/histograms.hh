@@ -103,15 +103,17 @@ public:
   histogram(histogram&&) = default;
   histogram& operator=(const histogram&) = default;
   histogram& operator=(histogram&&) = default;
+  // ~histogram() = default; // TODO: do I need to do this?
 
   histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
-  histogram(axes_type&& axes): _axes(std::move(axes)) { resize_bins(); }
+  histogram(axes_type&& axes)
+  noexcept(std::is_nothrow_move_constructible_v<axes_type>)
+  : _axes(std::move(axes)) { resize_bins(); }
 
   const axes_type& axes() const noexcept { return _axes; }
-  axes_type& axes() noexcept { return _axes; }
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
-  auto nbins() const noexcept { return _bins.size(); }
+  auto size() const noexcept { return containers::size(_bins); }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }

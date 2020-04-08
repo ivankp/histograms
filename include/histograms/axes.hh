@@ -72,12 +72,16 @@ public:
   container_axis& operator=(container_axis&&) = default;
 
   container_axis(const container_type& edges): _edges(edges) { }
-  container_axis(container_type&& edges): _edges(std::move(edges)) { }
+  container_axis(container_type&& edges)
+  noexcept(std::is_nothrow_move_constructible_v<container_type>)
+  : _edges(std::move(edges)) { }
   container_axis& operator=(const container_type& edges) {
     _edges = edges;
     return *this;
   }
-  container_axis& operator=(container_type&& edges) {
+  container_axis& operator=(container_type&& edges)
+  noexcept(std::is_nothrow_move_assignable_v<container_type>)
+  {
     _edges = std::move(edges);
     return *this;
   }
@@ -116,7 +120,7 @@ public:
     return find_bin_index(x);
   }
 
-  const container_type& edges() const { return _edges; }
+  const container_type& edges() const noexcept { return _edges; }
 };
 
 // Uniform axis =====================================================
@@ -142,7 +146,7 @@ public:
   uniform_axis& operator=(const uniform_axis&) = default;
   uniform_axis& operator=(uniform_axis&&) = default;
 
-  uniform_axis(index_type nbins, edge_type min, edge_type max)
+  uniform_axis(index_type nbins, edge_type min, edge_type max) noexcept
   : _nbins(nbins), _min(std::min(min,max)), _max(std::max(min,max)) { }
 
   index_type nedges() const noexcept { return _nbins+1; }

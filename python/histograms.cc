@@ -1,7 +1,7 @@
-// #include <memory>
 #include <string_view>
 #include <stdexcept>
 #include <memory>
+#include <variant>
 #include <histograms/histograms.hh>
 
 #define PY_SSIZE_T_CLEAN
@@ -30,6 +30,7 @@ public:
 };
 
 void lipp() noexcept { // https://youtu.be/-amJL3AyADI
+  // https://docs.python.org/3/c-api/exceptions.html
   try {
     throw;
   } catch (const existing_error&) {
@@ -43,18 +44,18 @@ void lipp() noexcept { // https://youtu.be/-amJL3AyADI
 }
 
 [[maybe_unused]] PyObject* py(double x) { return PyFloat_FromDouble(x); }
-[[maybe_unused]] PyObject* py(float  x) { return PyFloat_FromDouble(x); }
 [[maybe_unused]] PyObject* py(long   x) { return PyLong_FromLong(x); }
-[[maybe_unused]] PyObject* py(long long x) { return PyLong_FromLongLong(x); }
 [[maybe_unused]] PyObject* py(unsigned long x) { return PyLong_FromUnsignedLong(x); }
+[[maybe_unused]] PyObject* py(long long x) { return PyLong_FromLongLong(x); }
 [[maybe_unused]] PyObject* py(unsigned long long x) {
   return PyLong_FromUnsignedLongLong(x);
 }
-// PyObject* py(size_t x) { return PyLong_FromSize_t(x); }
 [[maybe_unused]] PyObject* py(std::string_view x) {
   // return PyBytes_FromStringAndSize(x.data(),x.size());
   return PyUnicode_FromStringAndSize(x.data(),x.size());
 }
+[[maybe_unused]] PyObject* py(int x) { return py((long)x); }
+[[maybe_unused]] PyObject* py(unsigned x) { return py((unsigned long)x); }
 
 template <typename T>
 class my_py_ptr {
@@ -96,12 +97,15 @@ public:
   const T* operator->() const noexcept { return p; }
   T& operator*() noexcept { return *p; }
   const T& operator*() const noexcept { return *p; }
+
+  bool operator!() const noexcept { return !p; }
+  operator bool() const noexcept { return p; }
 };
 
 using py_ptr = my_py_ptr<PyObject>;
 
 template <typename T>
-T unpy(py_ptr p) {
+T unpy(py_ptr p) noexcept {
   if constexpr (std::is_same_v<T,double>) {
     return PyFloat_AsDouble(p.get());
   } else
@@ -116,6 +120,21 @@ T unpy(py_ptr p) {
   } else
   if constexpr (std::is_same_v<T,unsigned long long>) {
     return PyLong_AsUnsignedLongLong(p.get());
+  } else
+  if constexpr (std::is_same_v<T,std::string_view>) {
+    // https://docs.python.org/3/c-api/unicode.html
+    const size_t len = PyUnicode_GET_DATA_SIZE(p.get());
+    if (len==0) return { };
+    return { PyUnicode_AS_DATA(p.get()), len };
+  } else
+  if constexpr (std::is_same_v<T,int>) {
+    return unpy<long>(p);
+  } else
+  if constexpr (std::is_same_v<T,unsigned>) {
+    return unpy<unsigned long>(p);
+  } else
+  if constexpr (std::is_same_v<T,float>) {
+    return unpy<double>(p);
   }
 }
 
@@ -126,7 +145,17 @@ T unpy_check(py_ptr p) {
   return x;
 }
 
-py_ptr next(py_ptr iter) { return py_ptr(PyIter_Next(iter.get())); }
+template <>
+std::string_view unpy_check<std::string_view>(py_ptr p) {
+  if (PyUnicode_READY(p.get())!=0)
+    throw error(PyExc_ValueError,"could not read python object as a string");
+  return unpy<std::string_view>(p);
+}
+
+template <typename T>
+T& unpy_to(T& x, py_ptr p) { return x = unpy<T>(p); }
+template <typename T>
+T& unpy_to_check(T& x, py_ptr p) { return x = unpy_check<T>(p); }
 
 template <typename T>
 void destroy(T* x) noexcept { x->~T(); }
@@ -141,9 +170,9 @@ void dealloc(T *self) noexcept {
 }
 
 template <typename T>
-int init(T *self, PyObject *args, PyObject *kwargs) noexcept {
+int init(T *mem, PyObject *args, PyObject *kwargs) noexcept {
   try {
-    new(self) T(args,kwargs);
+    new(mem) T(args,kwargs);
   } catch (...) {
     lipp();
     return 1;
@@ -151,7 +180,19 @@ int init(T *self, PyObject *args, PyObject *kwargs) noexcept {
   return 0;
 }
 
+py_ptr get_iter(PyObject *obj) { return py_ptr(PyObject_GetIter(obj)); }
+py_ptr get_iter(py_ptr obj) { return get_iter(obj.get()); }
+
+py_ptr get_next(PyObject *iter) { return py_ptr(PyIter_Next(iter)); }
+py_ptr get_next(py_ptr iter) { return get_next(iter.get()); }
+
 namespace axis {
+
+[[noreturn]] void uniform_args_error() {
+  throw error(PyExc_ValueError,
+    "uniform axis arguments must have the form"
+    "[nbins,min,max] or [nbins,min,max,\"log\"]");
+}
 
 struct py_axis {
   PyObject_HEAD
@@ -160,9 +201,72 @@ struct py_axis {
   std::unique_ptr<type> axis;
 
   py_axis(PyObject *args, PyObject *kwargs) {
-    TEST(__PRETTY_FUNCTION__)
-    // axis = new type();
-    // axis = std::make_unique<>();
+    std::vector<double> edges;
+    index_type nbins = 0;
+    double min, max;
+
+    auto iter = get_iter(args);
+    if (!iter) throw existing_error{};
+
+    auto arg = get_next(iter);
+    if (!arg) throw error(PyExc_ValueError,
+      "empty list of axis arguments");
+    for (;;) { // loop over arguments
+      auto subiter = get_iter(arg);
+      if (subiter) { // uniform chunk
+
+        auto subarg = get_next(subiter);
+        if (!subarg) uniform_args_error();
+        unpy_to_check(nbins,subarg);
+
+        subarg = get_next(subiter);
+        if (!subarg) uniform_args_error();
+        unpy_to_check(min,subarg);
+
+        subarg = get_next(subiter);
+        if (!subarg) uniform_args_error();
+        unpy_to_check(max,subarg);
+
+        subarg = get_next(subiter);
+        if (subarg) { // flags
+          const auto flag = unpy_check<std::string_view>(subarg);
+          if (flag == "log") {
+            // TODO: logarithmic spacing
+          } else uniform_args_error();
+
+          if (get_next(subiter)) // too many elements
+            uniform_args_error();
+        }
+
+      } else { // single edge
+        PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
+        edges.push_back(unpy_check<double>(arg));
+      }
+
+      // set up for next iteration
+      arg = get_next(iter);
+      if (arg) {
+        if (nbins) {
+          const double d = (max - min)/nbins;
+          edges.reserve(edges.size()+nbins+1);
+          for (index_type i=0; i<=nbins; ++i)
+            edges.push_back(min + i*d);
+          nbins = 0;
+        }
+      } else break;
+    }
+
+    // make the axis
+    if (edges.empty()) {
+      axis = std::make_unique<uniform_axis<double,true>>(
+        nbins, min, max
+      );
+    } else {
+      // need to sort and remove repetitions
+      axis = std::make_unique<container_axis<std::vector<double>,true>>(
+        std::move(edges)
+      );
+    }
   }
 
   type* operator->() { return axis.get(); }
@@ -186,94 +290,36 @@ struct py_hist {
   type h;
 
   py_hist(PyObject *args, PyObject *kwargs) {
-    /*
-    py_hist::type::axes_type axes;
-    union {
-      long long ix;
-      double dx;
-    };
-    std::vector<double> edges;
-    bool is_float;
-    unsigned k = 0;
-    for (py_ptr iter(PyObject_GetIter(args)), arg; (arg = next(iter)); ++k) {
-      py_ptr iter2(PyObject_GetIter(arg.get()));
-      if (!iter2) throw existing_error{};
-
-      py_ptr arg2 = next(iter2);
-      if (!arg2) throw error(PyExc_TypeError,
-        "argument is iterable but empty");
-      if (PyLong_Check(arg2.get())) {
-        ix = unpy_check<decltype(ix)>(arg2);
-        is_float = false;
-      } else {
-        dx = unpy_check<double>(arg2);
-        is_float = true;
-      }
-
-      arg2 = next(iter2);
-      if (arg2) {
-        py_ptr iter3(PyObject_GetIter(arg2.get()));
-        if (iter3) { // must be a uniform axis
-          py_ptr arg3;
-          for (int j=0; j<2; ++j) {
-            arg3 = next(iter3);
-            if (!arg3) throw error(PyExc_TypeError,
-              "axis range must have exactly 2 values");
-            edges.push_back(unpy_check<double>(arg3));
-          }
-
-          arg3 = next(iter3);
-          if (arg3) throw error(PyExc_TypeError,
-            "axis range must have exactly 2 values");
-
-          axes.emplace_back(
-            std::make_shared<uniform_axis<double,true>>(
-              (is_float ? index_type(dx) : index_type(ix)), edges[0], edges[1]
-          ));
-        } else { // must be a container axis
-          PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
-          edges.push_back(is_float ? dx : double(ix));
-          if (arg2) {
-            do edges.push_back(unpy_check<double>(arg2));
-            while ((arg2 = next(iter2)));
-          }
-
-          axes.emplace_back(
-            std::make_shared<container_axis<std::vector<double>,true>>(
-              std::move(edges)
-          ));
-        }
-      } else {
-        const double x = (is_float ? dx : double(ix));
-        axes.emplace_back(
-          std::make_shared<uniform_axis<double,true>>(
-            0, x, x
-        ));
-      }
-
-      edges.clear();
-    }
-
-    auto& h = self->h;
-    new(&h) py_hist::type(std::move(axes));
-    for (auto& b : h.bins()) {
-      b = nullptr;
-    }
-    */
+    // py_hist::type::axes_type axes;
+    // union {
+    //   long long ix;
+    //   double dx;
+    // };
+    // std::vector<double> edges;
+    // bool is_float;
+    // unsigned k = 0;
+    // for (py_ptr iter(PyObject_GetIter(args)), arg; (arg = next(iter)); ++k) {
+    // }
+    //
+    // auto& h = self->h;
+    // new(&h) py_hist::type(std::move(axes));
+    // for (auto& b : h.bins()) {
+    //   b = nullptr;
+    // }
   }
 };
 
-PyObject* nbins(py_hist *self, PyObject *Py_UNUSED(ignored)) {
-  return py(self->h.nbins());
+PyObject* size(py_hist *self, PyObject *Py_UNUSED(ignored)) {
+  return py(self->h.size());
 }
 
 PyMethodDef methods[] = {
-  { "nbins", (PyCFunction) nbins, METH_NOARGS,
+  { "size", (PyCFunction) size, METH_NOARGS,
     "total number of histogram bins, including overflow" },
   { nullptr }
 };
 
-Py_ssize_t lenfunc(py_hist *h) { return h->h.nbins(); }
+Py_ssize_t lenfunc(py_hist *h) { return h->h.size(); }
 
 PyObject* call(py_hist *self, PyObject *args, PyObject *kwargs) {
   printf("%s\n",__PRETTY_FUNCTION__);
