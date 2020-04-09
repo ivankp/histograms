@@ -103,6 +103,7 @@ public:
   histogram(histogram&&) = default;
   histogram& operator=(const histogram&) = default;
   histogram& operator=(histogram&&) = default;
+  // TODO: are these properly noexcept?
   // ~histogram() = default;
   // TODO: do default destructors work with inheritance?
 

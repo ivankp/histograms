@@ -203,6 +203,9 @@ struct py_axis {
   PyObject_HEAD
 
   using type = poly_axis_base<edge_type>;
+  using uniform_axis_type = uniform_axis<edge_type,true>;
+  using container_axis_type = container_axis<std::vector<edge_type>,true>;
+
   std::unique_ptr<type> axis;
 
   py_axis(PyObject* args, PyObject* kwargs) {
@@ -263,14 +266,14 @@ struct py_axis {
 
     // make the axis
     if (edges.empty()) {
-      axis = std::make_unique<uniform_axis<edge_type,true>>(
+      axis = std::make_unique<uniform_axis_type>(
         nbins, min, max
       );
     } else {
       std::sort( begin(edges), end(edges) );
       edges.erase( std::unique( begin(edges), end(edges) ), end(edges) );
 
-      axis = std::make_unique<container_axis<std::vector<edge_type>,true>>(
+      axis = std::make_unique<container_axis_type>(
         std::move(edges)
       );
     }
@@ -327,7 +330,7 @@ PyObject* str(py_axis* self) noexcept {
   std::stringstream ss;
   const auto* ptr = &**self;
   if (const auto* axis = dynamic_cast<
-    const uniform_axis<edge_type,true>*
+    const py_axis::uniform_axis_type*
   >(ptr)) {
     ss << "axis: { nbins: " << axis->nbins()
                << ", min: " << axis->min()
@@ -335,7 +338,7 @@ PyObject* str(py_axis* self) noexcept {
                << " }";
   } else
   if (const auto* axis = dynamic_cast<
-    const container_axis<std::vector<edge_type>,true>*
+    const py_axis::container_axis_type*
   >(ptr)) {
     ss << "axis: [ ";
     bool first = true;
@@ -385,27 +388,29 @@ struct py_hist {
   using type = histogram< py_ptr, std::vector<axis_ptr> >;
   type h;
 
-  py_hist(PyObject* args, PyObject* kwargs) {
-    py_hist::type::axes_type axes;
+  py_hist(PyObject* args, PyObject* kwargs)
+  : h([](PyObject* args) {
+      type::axes_type axes;
 
-    auto iter = get_iter(args);
-    if (!iter) throw existing_error{};
+      auto iter = get_iter(args);
+      if (!iter) throw existing_error{};
 
-    auto arg = get_next(iter);
-    if (!arg) throw error(PyExc_TypeError,
-      "empty list of histogram arguments");
-    for (;;) { // loop over arguments
-      axes.emplace_back(
-        PyObject_CallObject(
-          reinterpret_cast<PyObject*>(&axis::py_type), arg)
-      );
+      auto arg = get_next(iter);
+      if (!arg) throw error(PyExc_TypeError,
+        "empty list of histogram arguments");
+      for (;;) { // loop over arguments
+        axes.emplace_back(
+          PyObject_CallObject(
+            reinterpret_cast<PyObject*>(&axis::py_type), arg)
+        );
 
-      arg = get_next(iter);
-      if (!arg) break;
-    }
+        arg = get_next(iter);
+        if (!arg) break;
+      }
 
-    h = type(std::move(axes));
-
+      return axes;
+    }(args))
+  {
     // TODO: construct bin objects
   }
 
