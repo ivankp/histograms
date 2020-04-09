@@ -103,7 +103,8 @@ public:
   histogram(histogram&&) = default;
   histogram& operator=(const histogram&) = default;
   histogram& operator=(histogram&&) = default;
-  // ~histogram() = default; // TODO: do I need to do this?
+  // ~histogram() = default;
+  // TODO: do default destructors work with inheritance?
 
   histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
   histogram(axes_type&& axes)
@@ -148,7 +149,7 @@ public:
   template <typename... T>
   auto join_index(const T&... ii) const
   -> std::enable_if_t< (sizeof...(ii) > 1), index_type > {
-    // array is faster here because of for_each
+    // std::array is better here because of for_each
     return join_index(std::array<index_type,sizeof...(ii)>{index_type(ii)...});
   }
 
@@ -200,6 +201,9 @@ public:
   }
 
   index_type find_bin_index() const { return 0; }
+  // TODO: should zero-argument functions of this type be allowed?
+  // TODO: should for_each make sure all input containers have been
+  //       completely iterated over?
 
   template <typename... T>
   const bin_type& find_bin(const T&... xs) const {

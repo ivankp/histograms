@@ -136,27 +136,18 @@ void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
 template <typename T>
 class my_py_ptr {
   static_assert(alignof(T)==alignof(PyObject));
-  // static_assert(
-  //   std::disjunction<
-  //     std::is_same<T,PyObject>,
-  //     std::is_same<decltype(T::ob_base),PyObject>
-  //   >::value);
-  T* p;
-  void incref() { Py_INCREF(reinterpret_cast<PyObject*>(p)); }
-  void decref() { Py_DECREF(reinterpret_cast<PyObject*>(p)); }
+  PyObject* p;
 public:
   my_py_ptr() noexcept: p(nullptr) { }
-  explicit my_py_ptr(T* p) noexcept: p(p) {
+  explicit my_py_ptr(T* p) noexcept: p(reinterpret_cast<PyObject*>(p)) {
     // should not increment reference count here
     // because it is usually already incremented by python
   }
-  my_py_ptr(const my_py_ptr& o): p(o.p) { incref(); }
+  my_py_ptr(const my_py_ptr& o): p(o.p) { Py_INCREF(p); }
   my_py_ptr& operator=(const my_py_ptr& o) {
-    if (p != o.p) {
-      if (p) decref();
-      p = o.p;
-      incref();
-    }
+    Py_INCREF(o.p);
+    if (p) Py_DECREF(p);
+    p = o.p;
     return *this;
   }
   my_py_ptr(my_py_ptr&& o) noexcept: p(o.p) { o.p = nullptr; }
@@ -165,7 +156,7 @@ public:
     o.p = nullptr;
     return *this;
   }
-  ~my_py_ptr() { if (p) decref(); }
+  ~my_py_ptr() { if (p) Py_DECREF(p); }
 
   // T* get() noexcept { return p; }
   // const T* get() const noexcept { return p; }
@@ -174,7 +165,7 @@ public:
   // T& operator*() noexcept { return *p; }
   // const T& operator*() const noexcept { return *p; }
 
-  operator T*() const noexcept { return p; }
+  operator T*() const noexcept { return reinterpret_cast<T*>(p); }
 };
 
 using py_ptr = my_py_ptr<PyObject>;
@@ -300,7 +291,7 @@ struct py_axis {
   type& operator*() { return *axis; }
   const type& operator*() const { return *axis; }
 
-  PyObject* operator()(PyObject* args, PyObject* Py_UNUSED(ignored)) noexcept {
+  PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
     try {
       auto iter = get_iter(args);
       if (!iter) throw existing_error{};
@@ -393,30 +384,33 @@ namespace hist {
 struct py_hist {
   PyObject_HEAD
 
-  // using type = histogram<
-  //   py_ptr,
-  //   std::vector< std::shared_ptr<poly_axis_base<double>> >
-  // >;
-  using type = histogram< py_ptr, std::vector<my_py_ptr<axis::py_axis>> >;
+  using axis_ptr = my_py_ptr<axis::py_axis>;
+  using type = histogram< py_ptr, std::vector<axis_ptr> >;
   type h;
 
   py_hist(PyObject* args, PyObject* kwargs) {
-    // py_hist::type::axes_type axes;
-    // union {
-    //   long long ix;
-    //   double dx;
-    // };
-    // std::vector<double> edges;
-    // bool is_float;
-    // unsigned k = 0;
-    // for (py_ptr iter(PyObject_GetIter(args)), arg; (arg = next(iter)); ++k) {
-    // }
-    //
-    // auto& h = self->h;
-    // new(&h) py_hist::type(std::move(axes));
-    // for (auto& b : h.bins()) {
-    //   b = nullptr;
-    // }
+    py_hist::type::axes_type axes;
+
+    auto iter = get_iter(args);
+    if (!iter) throw existing_error{};
+
+    auto arg = get_next(iter);
+    if (!arg) throw error(PyExc_TypeError,
+      "empty list of histogram arguments");
+    for (;;) { // loop over arguments
+      axes.emplace_back(
+        reinterpret_cast<axis::py_axis*>(
+          PyObject_CallObject(
+            reinterpret_cast<PyObject*>(&axis::py_type), arg) )
+      );
+
+      arg = get_next(iter);
+      if (!arg) break;
+    }
+
+    h = type(std::move(axes));
+
+    // TODO: construct bin objects
   }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
@@ -435,10 +429,9 @@ PyMethodDef methods[] {
 };
 
 PySequenceMethods sq_methods {
-  .sq_length = reinterpret_cast<::lenfunc>(
-    +[](py_hist* h) noexcept -> Py_ssize_t {
-      return h->h.size();
-    }),
+  .sq_length = +[](PyObject* self) noexcept -> Py_ssize_t {
+    return reinterpret_cast<py_hist*>(self)->h.size();
+  },
   // binaryfunc sq_concat;
   // ssizeargfunc sq_repeat;
   // ssizeargfunc sq_item;
@@ -484,7 +477,7 @@ PyModuleDef py_module {
   // methods
 };
 
-}
+} // end anonymous namespace
 } // end histograms namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
