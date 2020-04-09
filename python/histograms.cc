@@ -133,55 +133,45 @@ void unpy(T& x, PyObject* p) noexcept { x = unpy<T>(p); }
 template <typename T>
 void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
 
-template <typename T>
-class my_py_ptr {
-  static_assert(alignof(T)==alignof(PyObject));
+class py_ptr {
+protected:
   PyObject* p;
 public:
-  my_py_ptr() noexcept: p(nullptr) { }
-  explicit my_py_ptr(T* p) noexcept: p(reinterpret_cast<PyObject*>(p)) {
+  py_ptr() noexcept: p(nullptr) { }
+  explicit py_ptr(PyObject* p) noexcept: p(p) {
     // should not increment reference count here
     // because it is usually already incremented by python
   }
-  my_py_ptr(const my_py_ptr& o): p(o.p) { Py_INCREF(p); }
-  my_py_ptr& operator=(const my_py_ptr& o) {
+  py_ptr(const py_ptr& o): p(o.p) { Py_INCREF(p); }
+  py_ptr& operator=(const py_ptr& o) {
     Py_INCREF(o.p);
     if (p) Py_DECREF(p);
     p = o.p;
     return *this;
   }
-  my_py_ptr(my_py_ptr&& o) noexcept: p(o.p) { o.p = nullptr; }
-  my_py_ptr& operator=(my_py_ptr&& o) noexcept {
+  py_ptr(py_ptr&& o) noexcept: p(o.p) { o.p = nullptr; }
+  py_ptr& operator=(py_ptr&& o) noexcept {
     p = o.p;
     o.p = nullptr;
     return *this;
   }
-  ~my_py_ptr() { if (p) Py_DECREF(p); }
+  ~py_ptr() { if (p) Py_DECREF(p); }
 
-  // T* get() noexcept { return p; }
-  // const T* get() const noexcept { return p; }
-  // T* operator->() noexcept { return p; }
-  // const T* operator->() const noexcept { return p; }
-  // T& operator*() noexcept { return *p; }
-  // const T& operator*() const noexcept { return *p; }
-
-  operator T*() const noexcept { return reinterpret_cast<T*>(p); }
+  operator PyObject*() const noexcept { return p; }
 };
-
-using py_ptr = my_py_ptr<PyObject>;
 
 template <typename T>
 void destroy(T* x) noexcept { x->~T(); }
 
 template <typename T>
-void dealloc(PyObject* self) noexcept {
+void dealloc(T* self) noexcept {
   static_assert(alignof(T)==alignof(PyObject));
-  destroy(reinterpret_cast<T*>(self)); // call destructor
+  destroy(self); // call destructor
   Py_TYPE(self)->tp_free(self); // free memory
 }
 
 template <typename T>
-int init(PyObject* mem, PyObject* args, PyObject* kwargs) noexcept {
+int init(T* mem, PyObject* args, PyObject* kwargs) noexcept {
   try {
     new(mem) T(args,kwargs);
   } catch (...) {
@@ -192,8 +182,8 @@ int init(PyObject* mem, PyObject* args, PyObject* kwargs) noexcept {
 }
 
 template <typename T>
-PyObject* call(PyObject* self, PyObject* args, PyObject* kwargs) noexcept {
-  return (*reinterpret_cast<T*>(self))(args,kwargs);
+PyObject* call(T* self, PyObject* args, PyObject* kwargs) noexcept {
+  return (*self)(args,kwargs);
 }
 
 py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
@@ -309,17 +299,15 @@ struct py_axis {
 };
 
 PyMethodDef methods[] {
-  { "nbins", reinterpret_cast<PyCFunction>(
-    +[](py_axis* self, PyObject* Py_UNUSED(ignored)) noexcept {
+  { "nbins", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
       return py((*self)->nbins());
-    }), METH_NOARGS, "number of bins on the axis not counting overflow" },
+    }, METH_NOARGS, "number of bins on the axis not counting overflow" },
 
-  { "nedges", reinterpret_cast<PyCFunction>(
-    +[](py_axis* self, PyObject* Py_UNUSED(ignored)) noexcept {
+  { "nedges", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
       return py((*self)->nedges());
-    }), METH_NOARGS, "number of edges on the axis" },
+    }, METH_NOARGS, "number of edges on the axis" },
 
-  { "find_bin_index", reinterpret_cast<PyCFunction>(+[](
+  { "find_bin_index", (PyCFunction) +[](
       py_axis* self, PyObject* const* args, Py_ssize_t nargs
     ) noexcept -> PyObject* {
       try {
@@ -330,14 +318,14 @@ PyMethodDef methods[] {
         lipp();
         return nullptr;
       }
-    }), METH_FASTCALL, "" },
+    }, METH_FASTCALL, "" },
 
   { }
 };
 
-PyObject* str(PyObject* self) noexcept {
+PyObject* str(py_axis* self) noexcept {
   std::stringstream ss;
-  const auto* ptr = reinterpret_cast<py_axis*>(self)->axis.get();
+  const auto* ptr = &**self;
   if (const auto* axis = dynamic_cast<
     const uniform_axis<edge_type,true>*
   >(ptr)) {
@@ -366,14 +354,14 @@ PyTypeObject py_type {
   .tp_name = "histograms.axis",
   .tp_basicsize = sizeof(py_axis),
   .tp_itemsize = 0,
-  .tp_dealloc = dealloc<py_axis>,
-  .tp_call = call<py_axis>,
-  .tp_str = str,
+  .tp_dealloc = (::destructor) dealloc<py_axis>,
+  .tp_call = (::ternaryfunc) call<py_axis>,
+  .tp_str = (::reprfunc) str,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "axis object",
   .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = init<py_axis>,
+  .tp_init = (::initproc) init<py_axis>,
   .tp_new = PyType_GenericNew,
 };
 
@@ -384,7 +372,16 @@ namespace hist {
 struct py_hist {
   PyObject_HEAD
 
-  using axis_ptr = my_py_ptr<axis::py_axis>;
+  // using axis_ptr = py_ptr<axis::py_axis>;
+  struct axis_ptr: py_ptr {
+    using py_ptr::py_ptr;
+    const axis::py_axis::type& operator*() const noexcept {
+      return **reinterpret_cast<axis::py_axis*>(p);
+    }
+    const axis::py_axis::type* operator->() const noexcept {
+      return &**this;
+    }
+  };
   using type = histogram< py_ptr, std::vector<axis_ptr> >;
   type h;
 
@@ -399,9 +396,8 @@ struct py_hist {
       "empty list of histogram arguments");
     for (;;) { // loop over arguments
       axes.emplace_back(
-        reinterpret_cast<axis::py_axis*>(
-          PyObject_CallObject(
-            reinterpret_cast<PyObject*>(&axis::py_type), arg) )
+        PyObject_CallObject(
+          reinterpret_cast<PyObject*>(&axis::py_type), arg)
       );
 
       arg = get_next(iter);
@@ -420,17 +416,16 @@ struct py_hist {
 };
 
 PyMethodDef methods[] {
-  { "size", reinterpret_cast<PyCFunction>(
-    +[](py_hist* self, PyObject* Py_UNUSED(ignored)) noexcept {
+  { "size", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
       return py(self->h.size());
-    }), METH_NOARGS, "total number of histogram bins, including overflow" },
+    }, METH_NOARGS, "total number of histogram bins, including overflow" },
 
   { }
 };
 
 PySequenceMethods sq_methods {
-  .sq_length = +[](PyObject* self) noexcept -> Py_ssize_t {
-    return reinterpret_cast<py_hist*>(self)->h.size();
+  .sq_length = (::lenfunc) +[](py_hist* self) noexcept -> Py_ssize_t {
+    return self->h.size();
   },
   // binaryfunc sq_concat;
   // ssizeargfunc sq_repeat;
@@ -448,14 +443,14 @@ PyTypeObject py_type {
   .tp_name = "histograms.histogram",
   .tp_basicsize = sizeof(py_hist),
   .tp_itemsize = 0,
-  .tp_dealloc = dealloc<py_hist>,
+  .tp_dealloc = (::destructor) dealloc<py_hist>,
   .tp_as_sequence = &sq_methods,
-  .tp_call = call<py_hist>,
+  .tp_call = (::ternaryfunc) call<py_hist>,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "histogram object",
   .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = init<py_hist>,
+  .tp_init = (::initproc) init<py_hist>,
   .tp_new = PyType_GenericNew,
 };
 
