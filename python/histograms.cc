@@ -1,7 +1,7 @@
-#include <string_view>
 #include <stdexcept>
 #include <memory>
-#include <variant>
+#include <string_view>
+#include <sstream>
 #include <histograms/histograms.hh>
 
 #define PY_SSIZE_T_CLEAN
@@ -39,7 +39,7 @@ void lipp() noexcept { // https://youtu.be/-amJL3AyADI
   } catch (const std::exception& e) {
     PyErr_SetString(PyExc_RuntimeError,e.what());
   } catch (...) {
-    PyErr_SetString(PyExc_RuntimeError,"unknown error");
+    PyErr_SetString(PyExc_RuntimeError,"");
   }
 }
 
@@ -238,6 +238,7 @@ struct py_axis {
     for (;;) { // loop over arguments
       auto subiter = get_iter(arg);
       if (subiter) { // uniform chunk
+        // strings are also iterable and will enter here
 
         auto subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
@@ -269,15 +270,14 @@ struct py_axis {
 
       // set up for next iteration
       arg = get_next(iter);
-      if (arg) {
-        if (nbins) {
-          const edge_type d = (max - min)/nbins;
-          edges.reserve(edges.size()+nbins+1);
-          for (index_type i=0; i<=nbins; ++i)
-            edges.push_back(min + i*d);
-          nbins = 0;
-        }
-      } else break;
+      if (nbins && (arg || !edges.empty())) {
+        const edge_type d = (max - min)/nbins;
+        edges.reserve(edges.size()+nbins+1);
+        for (index_type i=0; i<=nbins; ++i)
+          edges.push_back(min + i*d);
+        nbins = 0;
+      }
+      if (!arg) break;
     }
 
     // make the axis
@@ -286,7 +286,9 @@ struct py_axis {
         nbins, min, max
       );
     } else {
-      // need to sort and remove repetitions
+      std::sort( begin(edges), end(edges) );
+      edges.erase( std::unique( begin(edges), end(edges) ), end(edges) );
+
       axis = std::make_unique<container_axis<std::vector<edge_type>,true>>(
         std::move(edges)
       );
@@ -342,6 +344,32 @@ PyMethodDef methods[] {
   { }
 };
 
+PyObject* str(PyObject* self) noexcept {
+  std::stringstream ss;
+  const auto* ptr = reinterpret_cast<py_axis*>(self)->axis.get();
+  if (const auto* axis = dynamic_cast<
+    const uniform_axis<edge_type,true>*
+  >(ptr)) {
+    ss << "axis: { nbins: " << axis->nbins()
+               << ", min: " << axis->min()
+               << ", max: " << axis->max()
+               << " }";
+  } else
+  if (const auto* axis = dynamic_cast<
+    const container_axis<std::vector<edge_type>,true>*
+  >(ptr)) {
+    ss << "axis: [ ";
+    bool first = true;
+    for (auto x : axis->edges()) {
+      if (first) first = false;
+      else ss << ", ";
+      ss << x;
+    }
+    ss << " ]";
+  }
+  return py(ss.str());
+}
+
 PyTypeObject py_type {
   PyVarObject_HEAD_INIT(nullptr, 0)
   .tp_name = "histograms.axis",
@@ -349,6 +377,7 @@ PyTypeObject py_type {
   .tp_itemsize = 0,
   .tp_dealloc = dealloc<py_axis>,
   .tp_call = call<py_axis>,
+  .tp_str = str,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "axis object",
   .tp_methods = methods,
@@ -479,8 +508,7 @@ PyMODINIT_FUNC PyInit_histograms() {
     Py_INCREF(py_type.ptr);
     ++n;
     if ( PyModule_AddObject(
-      m, py_type.name,
-      reinterpret_cast<PyObject*>(py_type.ptr) ) < 0
+      m, py_type.name, reinterpret_cast<PyObject*>(py_type.ptr) ) < 0
     ) {
       do {
         Py_DECREF(py_types[--n].ptr);
