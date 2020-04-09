@@ -43,19 +43,95 @@ void lipp() noexcept { // https://youtu.be/-amJL3AyADI
   }
 }
 
-[[maybe_unused]] PyObject* py(double x) { return PyFloat_FromDouble(x); }
-[[maybe_unused]] PyObject* py(long   x) { return PyLong_FromLong(x); }
-[[maybe_unused]] PyObject* py(unsigned long x) { return PyLong_FromUnsignedLong(x); }
-[[maybe_unused]] PyObject* py(long long x) { return PyLong_FromLongLong(x); }
-[[maybe_unused]] PyObject* py(unsigned long long x) {
-  return PyLong_FromUnsignedLongLong(x);
+template <typename U>
+class is_string_like {
+  template <typename, typename = void>
+  struct impl : std::false_type { };
+  template <typename T>
+  struct impl<T, decltype((void)(
+    std::declval<T&>().data(), std::declval<T&>().size()
+  ))> : std::is_convertible<
+    decltype(std::declval<T&>().data()), const char*
+  > { };
+public:
+  using type = impl<U>;
+  static constexpr bool value = type::value;
+};
+
+template <typename T>
+[[nodiscard]] PyObject* py(const T& x) noexcept {
+  if constexpr (std::is_floating_point_v<T>) {
+    return PyFloat_FromDouble(x);
+  } else
+  if constexpr (std::is_same_v<T,int> || std::is_same_v<T,long>) {
+    return PyLong_FromLong(x);
+  } else
+  if constexpr (std::is_same_v<T,unsigned> || std::is_same_v<T,unsigned long>) {
+    return PyLong_FromUnsignedLong(x);
+  } else
+  if constexpr (std::is_same_v<T,long long>) {
+    return PyLong_FromLongLong(x);
+  } else
+  if constexpr (std::is_same_v<T,unsigned long long>) {
+    return PyLong_FromUnsignedLongLong(x);
+  } else
+  if constexpr (is_string_like<T>::value) {
+    return PyUnicode_FromStringAndSize(x.data(),x.size());
+  }
 }
-[[maybe_unused]] PyObject* py(std::string_view x) {
-  // return PyBytes_FromStringAndSize(x.data(),x.size());
-  return PyUnicode_FromStringAndSize(x.data(),x.size());
+
+template <typename T>
+T unpy(PyObject* p) noexcept {
+  if constexpr (std::is_floating_point_v<T>) {
+    return PyFloat_AsDouble(p);
+  } else
+  if constexpr (std::is_same_v<T,int> || std::is_same_v<T,long>) {
+    return PyLong_AsLong(p);
+  } else
+  if constexpr (std::is_same_v<T,unsigned> || std::is_same_v<T,unsigned long>) {
+    return PyLong_AsUnsignedLong(p);
+  } else
+  if constexpr (std::is_same_v<T,long long>) {
+    return PyLong_AsLongLong(p);
+  } else
+  if constexpr (std::is_same_v<T,unsigned long long>) {
+    return PyLong_AsUnsignedLongLong(p);
+  } else
+  if constexpr (std::is_same_v<T,bool>) {
+    return PyObject_IsTrue(p);
+  } else
+  if constexpr (is_string_like<T>::value) {
+    // https://docs.python.org/3/c-api/unicode.html
+    const size_t len = PyUnicode_GET_DATA_SIZE(p);
+    if (len==0) return { };
+    return { PyUnicode_AS_DATA(p), len };
+  }
 }
-[[maybe_unused]] PyObject* py(int x) { return py((long)x); }
-[[maybe_unused]] PyObject* py(unsigned x) { return py((unsigned long)x); }
+
+template <typename T>
+T unpy_check(PyObject* p) {
+  if constexpr (std::is_arithmetic_v<T>) {
+    if constexpr (std::is_same_v<T,bool>) {
+      const auto x = PyObject_IsTrue(p);
+      if (x==(decltype(x))-1 && PyErr_Occurred()) throw existing_error{};
+      return x;
+    } else {
+      const auto x = unpy<T>(p);
+      if (x==(decltype(x))-1 && PyErr_Occurred()) throw existing_error{};
+      return x;
+    }
+  } else
+  if constexpr (is_string_like<T>::value) {
+    if (PyUnicode_READY(p)!=0)
+      throw error(PyExc_ValueError,"could not read python object as a string");
+    return unpy<T>(p);
+  }
+}
+
+template <typename T>
+void unpy(T& x, PyObject* p) noexcept { x = unpy<T>(p); }
+template <typename T>
+void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
 
 template <typename T>
 class my_py_ptr {
@@ -100,62 +176,11 @@ public:
 
   bool operator!() const noexcept { return !p; }
   operator bool() const noexcept { return p; }
+
+  operator PyObject*() const noexcept { return p; }
 };
 
 using py_ptr = my_py_ptr<PyObject>;
-
-template <typename T>
-T unpy(py_ptr p) noexcept {
-  if constexpr (std::is_same_v<T,double>) {
-    return PyFloat_AsDouble(p.get());
-  } else
-  if constexpr (std::is_same_v<T,long>) {
-    return PyLong_AsLong(p.get());
-  } else
-  if constexpr (std::is_same_v<T,unsigned long>) {
-    return PyLong_AsUnsignedLong(p.get());
-  } else
-  if constexpr (std::is_same_v<T,long long>) {
-    return PyLong_AsLongLong(p.get());
-  } else
-  if constexpr (std::is_same_v<T,unsigned long long>) {
-    return PyLong_AsUnsignedLongLong(p.get());
-  } else
-  if constexpr (std::is_same_v<T,std::string_view>) {
-    // https://docs.python.org/3/c-api/unicode.html
-    const size_t len = PyUnicode_GET_DATA_SIZE(p.get());
-    if (len==0) return { };
-    return { PyUnicode_AS_DATA(p.get()), len };
-  } else
-  if constexpr (std::is_same_v<T,int>) {
-    return unpy<long>(p);
-  } else
-  if constexpr (std::is_same_v<T,unsigned>) {
-    return unpy<unsigned long>(p);
-  } else
-  if constexpr (std::is_same_v<T,float>) {
-    return unpy<double>(p);
-  }
-}
-
-template <typename T>
-T unpy_check(py_ptr p) {
-  const auto x = unpy<T>(p);
-  if (x==(decltype(x))-1 && PyErr_Occurred()) throw existing_error{};
-  return x;
-}
-
-template <>
-std::string_view unpy_check<std::string_view>(py_ptr p) {
-  if (PyUnicode_READY(p.get())!=0)
-    throw error(PyExc_ValueError,"could not read python object as a string");
-  return unpy<std::string_view>(p);
-}
-
-template <typename T>
-T& unpy_to(T& x, py_ptr p) { return x = unpy<T>(p); }
-template <typename T>
-T& unpy_to_check(T& x, py_ptr p) { return x = unpy_check<T>(p); }
 
 template <typename T>
 void destroy(T* x) noexcept { x->~T(); }
@@ -181,10 +206,7 @@ int init(T *mem, PyObject *args, PyObject *kwargs) noexcept {
 }
 
 py_ptr get_iter(PyObject *obj) { return py_ptr(PyObject_GetIter(obj)); }
-py_ptr get_iter(py_ptr obj) { return get_iter(obj.get()); }
-
 py_ptr get_next(PyObject *iter) { return py_ptr(PyIter_Next(iter)); }
-py_ptr get_next(py_ptr iter) { return get_next(iter.get()); }
 
 namespace axis {
 
@@ -217,15 +239,15 @@ struct py_axis {
 
         auto subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_to_check(nbins,subarg);
+        unpy_check(nbins,subarg);
 
         subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_to_check(min,subarg);
+        unpy_check(min,subarg);
 
         subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_to_check(max,subarg);
+        unpy_check(max,subarg);
 
         subarg = get_next(subiter);
         if (subarg) { // flags

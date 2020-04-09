@@ -1,14 +1,27 @@
-.PHONY: all clean install
+CPPFLAGS = -std=c++17 -I../include
+CXXFLAGS := -Wall -O3 -flto -fmax-errors=3
 
-all: build
+# generate .d file during compilation
+CPPFLAGS += -MT $@ -MMD -MP -MF $*.d
 
-build: setup.py histograms.cc
-	@rm -rfv build
-	CC=g++ python3 setup.py build
+PYTHON_INCLUDE := $(shell \
+  python3 -c 'import sysconfig; print(sysconfig.get_paths()["include"])')
 
-install: build
-	CC=g++ python3 setup.py install
+histograms.o: CPPFLAGS += -DNDEBUG -isystem $(PYTHON_INCLUDE)
+histograms.o: CXXFLAGS += -fPIC -fwrapv
+histograms.so: LDFLAGS += -shared -pthread
+
+LIBNAME := histograms
+
+.PHONY: all clean
+
+all: $(LIBNAME).so
+
+-include $(LIBNAME).d
+
+%.so: %.o
+	$(CXX) $(LDFLAGS) $(TARGET_ARCH) $^ $(LDLIBS) -o $@
 
 clean:
-	@rm -rfv build
+	@rm -fv $(LIBNAME).so $(LIBNAME).o $(LIBNAME).d
 
