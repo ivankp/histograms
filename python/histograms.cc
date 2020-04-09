@@ -148,7 +148,7 @@ public:
   my_py_ptr() noexcept: p(nullptr) { }
   explicit my_py_ptr(T* p) noexcept: p(p) {
     // should not increment reference count here
-    // because it may have already been incremented
+    // because it is usually already incremented by python
   }
   my_py_ptr(const my_py_ptr& o): p(o.p) { incref(); }
   my_py_ptr& operator=(const my_py_ptr& o) {
@@ -233,7 +233,7 @@ struct py_axis {
     if (!iter) throw existing_error{};
 
     auto arg = get_next(iter);
-    if (!arg) throw error(PyExc_ValueError,
+    if (!arg) throw error(PyExc_TypeError,
       "empty list of axis arguments");
     for (;;) { // loop over arguments
       auto subiter = get_iter(arg);
@@ -298,9 +298,18 @@ struct py_axis {
   type& operator*() { return *axis; }
   const type& operator*() const { return *axis; }
 
-  PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
-    TEST(__PRETTY_FUNCTION__)
-    Py_RETURN_NONE;
+  PyObject* operator()(PyObject* args, PyObject* Py_UNUSED(ignored)) noexcept {
+    auto iter = get_iter(args);
+    if (!iter) return nullptr;
+
+    auto arg = get_next(iter);
+    if (!arg || get_next(iter)) {
+      PyErr_SetString(PyExc_TypeError,
+        "axis call expression takes exactly one argument");
+      return nullptr;
+    }
+
+    return py(axis->find_bin_index(unpy_check<edge_type>(arg)));
   }
 };
 
