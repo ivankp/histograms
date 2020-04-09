@@ -4,8 +4,11 @@ from histograms import histogram, axis
 
 ax = axis(1,10,[6,20,50],100)
 print(ax.find_bin_index(43))
+# print(ax.find_bin_index("lumberjack"))
 print(ax(33))
+# print(ax("brian"))
 # print(ax.find_bin_index(15,2))
+# print(ax(15,2))
 print(ax.nbins())
 print(ax.nedges())
 

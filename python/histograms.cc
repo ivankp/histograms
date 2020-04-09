@@ -299,17 +299,19 @@ struct py_axis {
   const type& operator*() const { return *axis; }
 
   PyObject* operator()(PyObject* args, PyObject* Py_UNUSED(ignored)) noexcept {
-    auto iter = get_iter(args);
-    if (!iter) return nullptr;
+    try {
+      auto iter = get_iter(args);
+      if (!iter) throw existing_error{};
 
-    auto arg = get_next(iter);
-    if (!arg || get_next(iter)) {
-      PyErr_SetString(PyExc_TypeError,
+      auto arg = get_next(iter);
+      if (!arg || get_next(iter)) throw error(PyExc_TypeError,
         "axis call expression takes exactly one argument");
+
+      return py(axis->find_bin_index(unpy_check<edge_type>(arg)));
+    } catch (...) {
+      lipp();
       return nullptr;
     }
-
-    return py(axis->find_bin_index(unpy_check<edge_type>(arg)));
   }
 };
 
@@ -327,12 +329,14 @@ PyMethodDef methods[] {
   { "find_bin_index", reinterpret_cast<PyCFunction>(+[](
       py_axis* self, PyObject* const* args, Py_ssize_t nargs
     ) noexcept -> PyObject* {
-      if (nargs!=1) {
-        PyErr_SetString(PyExc_TypeError,
-          "find_bin_index(x) takes exactly one argument");
+      try {
+        if (nargs!=1) throw error(PyExc_TypeError,
+          "axis.find_bin_index(x) takes exactly one argument");
+        return py((*self)->find_bin_index(unpy_check<edge_type>(args[0])));
+      } catch (...) {
+        lipp();
         return nullptr;
       }
-      return py((*self)->find_bin_index(unpy_check<edge_type>(args[0])));
     }), METH_FASTCALL, "" },
 
   { }
