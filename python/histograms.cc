@@ -30,7 +30,7 @@ public:
 };
 
 void lipp() noexcept { // https://youtu.be/-amJL3AyADI
-  // https://docs.python.org/3/c-api/exceptions.html
+  // https://docs.python.org/3/c-api/exceptions.html#standard-exceptions
   try {
     throw;
   } catch (const existing_error&) {
@@ -167,17 +167,14 @@ public:
   }
   ~my_py_ptr() { if (p) decref(); }
 
-  T* get() noexcept { return p; }
-  const T* get() const noexcept { return p; }
-  T* operator->() noexcept { return p; }
-  const T* operator->() const noexcept { return p; }
-  T& operator*() noexcept { return *p; }
-  const T& operator*() const noexcept { return *p; }
+  // T* get() noexcept { return p; }
+  // const T* get() const noexcept { return p; }
+  // T* operator->() noexcept { return p; }
+  // const T* operator->() const noexcept { return p; }
+  // T& operator*() noexcept { return *p; }
+  // const T& operator*() const noexcept { return *p; }
 
-  bool operator!() const noexcept { return !p; }
-  operator bool() const noexcept { return p; }
-
-  operator PyObject*() const noexcept { return p; }
+  operator T*() const noexcept { return p; }
 };
 
 using py_ptr = my_py_ptr<PyObject>;
@@ -186,7 +183,7 @@ template <typename T>
 void destroy(T* x) noexcept { x->~T(); }
 
 template <typename T>
-void dealloc(T *self) noexcept {
+void dealloc(T* self) noexcept {
   static_assert(alignof(T)==alignof(PyObject));
   // call destructor
   destroy(self);
@@ -195,7 +192,7 @@ void dealloc(T *self) noexcept {
 }
 
 template <typename T>
-int init(T *mem, PyObject *args, PyObject *kwargs) noexcept {
+int init(T* mem, PyObject* args, PyObject* kwargs) noexcept {
   try {
     new(mem) T(args,kwargs);
   } catch (...) {
@@ -205,8 +202,13 @@ int init(T *mem, PyObject *args, PyObject *kwargs) noexcept {
   return 0;
 }
 
-py_ptr get_iter(PyObject *obj) { return py_ptr(PyObject_GetIter(obj)); }
-py_ptr get_next(PyObject *iter) { return py_ptr(PyIter_Next(iter)); }
+template <typename T>
+PyObject* call(T* self, PyObject* args, PyObject* kwargs) noexcept {
+  return (*self)(args,kwargs);
+}
+
+py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
+py_ptr get_next(PyObject* iter) { return py_ptr(PyIter_Next(iter)); }
 
 namespace axis {
 
@@ -216,16 +218,18 @@ namespace axis {
     "[nbins,min,max] or [nbins,min,max,\"log\"]");
 }
 
+using edge_type = double;
+
 struct py_axis {
   PyObject_HEAD
 
-  using type = poly_axis_base<double>;
+  using type = poly_axis_base<edge_type>;
   std::unique_ptr<type> axis;
 
-  py_axis(PyObject *args, PyObject *kwargs) {
-    std::vector<double> edges;
+  py_axis(PyObject* args, PyObject* kwargs) {
+    std::vector<edge_type> edges;
     index_type nbins = 0;
-    double min, max;
+    edge_type min, max;
 
     auto iter = get_iter(args);
     if (!iter) throw existing_error{};
@@ -262,14 +266,14 @@ struct py_axis {
 
       } else { // single edge
         PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
-        edges.push_back(unpy_check<double>(arg));
+        edges.push_back(unpy_check<edge_type>(arg));
       }
 
       // set up for next iteration
       arg = get_next(iter);
       if (arg) {
         if (nbins) {
-          const double d = (max - min)/nbins;
+          const edge_type d = (max - min)/nbins;
           edges.reserve(edges.size()+nbins+1);
           for (index_type i=0; i<=nbins; ++i)
             edges.push_back(min + i*d);
@@ -280,12 +284,12 @@ struct py_axis {
 
     // make the axis
     if (edges.empty()) {
-      axis = std::make_unique<uniform_axis<double,true>>(
+      axis = std::make_unique<uniform_axis<edge_type,true>>(
         nbins, min, max
       );
     } else {
       // need to sort and remove repetitions
-      axis = std::make_unique<container_axis<std::vector<double>,true>>(
+      axis = std::make_unique<container_axis<std::vector<edge_type>,true>>(
         std::move(edges)
       );
     }
@@ -295,6 +299,50 @@ struct py_axis {
   const type* operator->() const { return axis.get(); }
   type& operator*() { return *axis; }
   const type& operator*() const { return *axis; }
+
+  PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
+    Py_RETURN_NONE;
+  }
+};
+
+PyMethodDef methods[] = {
+  { "nbins", reinterpret_cast<PyCFunction>(
+    +[](py_axis* self, PyObject* Py_UNUSED(ignored)) noexcept {
+      return py((*self)->nbins());
+    }), METH_NOARGS, "number of bins on the axis not counting overflow" },
+
+  { "nedges", reinterpret_cast<PyCFunction>(
+    +[](py_axis* self, PyObject* Py_UNUSED(ignored)) noexcept {
+      return py((*self)->nedges());
+    }), METH_NOARGS, "number of edges on the axis" },
+
+  { "find_bin_index", reinterpret_cast<PyCFunction>(+[](
+      py_axis* self, PyObject* const* args, Py_ssize_t nargs
+    ) noexcept -> PyObject* {
+      if (nargs!=1) {
+        PyErr_SetString(PyExc_TypeError,
+          "find_bin_index(x) takes exactly one argument");
+        return nullptr;
+      }
+      return py((*self)->find_bin_index(unpy_check<edge_type>(args[0])));
+    }), METH_FASTCALL, "" },
+
+  { }
+};
+
+PyTypeObject py_type = {
+  PyVarObject_HEAD_INIT(nullptr, 0)
+  .tp_name = "histograms.axis",
+  .tp_basicsize = sizeof(py_axis),
+  .tp_itemsize = 0,
+  .tp_dealloc = reinterpret_cast<::destructor>( dealloc<py_axis> ),
+  .tp_call = reinterpret_cast<::ternaryfunc>( call<py_axis> ),
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+  .tp_doc = "axis object",
+  .tp_methods = methods,
+  .tp_members = nullptr,
+  .tp_init = reinterpret_cast<::initproc>( init<py_axis> ),
+  .tp_new = PyType_GenericNew,
 };
 
 } // end axis namespace
@@ -311,7 +359,7 @@ struct py_hist {
   using type = histogram< py_ptr, std::vector<my_py_ptr<axis::py_axis>> >;
   type h;
 
-  py_hist(PyObject *args, PyObject *kwargs) {
+  py_hist(PyObject* args, PyObject* kwargs) {
     // py_hist::type::axes_type axes;
     // union {
     //   long long ix;
@@ -329,27 +377,26 @@ struct py_hist {
     //   b = nullptr;
     // }
   }
-};
 
-PyObject* size(py_hist *self, PyObject *Py_UNUSED(ignored)) {
-  return py(self->h.size());
-}
+  PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
+    Py_RETURN_NONE;
+  }
+};
 
 PyMethodDef methods[] = {
-  { "size", (PyCFunction) size, METH_NOARGS,
-    "total number of histogram bins, including overflow" },
-  { nullptr }
+  { "size", reinterpret_cast<PyCFunction>(
+    +[](py_hist* self, PyObject* Py_UNUSED(ignored)) noexcept {
+      return py(self->h.size());
+    }), METH_NOARGS, "total number of histogram bins, including overflow" },
+
+  { }
 };
 
-Py_ssize_t lenfunc(py_hist *h) { return h->h.size(); }
-
-PyObject* call(py_hist *self, PyObject *args, PyObject *kwargs) {
-  printf("%s\n",__PRETTY_FUNCTION__);
-  Py_RETURN_NONE;
-}
-
 PySequenceMethods sq_methods = {
-  .sq_length = (::lenfunc) lenfunc,
+  .sq_length = reinterpret_cast<::lenfunc>(
+    +[](py_hist* h) noexcept -> Py_ssize_t {
+      return h->h.size();
+    }),
   // binaryfunc sq_concat;
   // ssizeargfunc sq_repeat;
   // ssizeargfunc sq_item;
@@ -366,14 +413,14 @@ PyTypeObject py_type = {
   .tp_name = "histograms.histogram",
   .tp_basicsize = sizeof(py_hist),
   .tp_itemsize = 0,
-  .tp_dealloc = (::destructor) dealloc<py_hist>,
+  .tp_dealloc = reinterpret_cast<::destructor>( dealloc<py_hist> ),
   .tp_as_sequence = &sq_methods,
-  .tp_call = (::ternaryfunc) call,
+  .tp_call = reinterpret_cast<::ternaryfunc>( call<py_hist> ),
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "histogram object",
   .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = (::initproc) init<py_hist>,
+  .tp_init = reinterpret_cast<::initproc>( init<py_hist> ),
   .tp_new = PyType_GenericNew,
 };
 
@@ -383,7 +430,7 @@ PyTypeObject py_type = {
 PyMethodDef methods[] = {
   { "histogram", make, METH_VARARGS | METH_KEYWORDS,
     "initializes a histogram" },
-  { nullptr, nullptr, 0, nullptr } // sentinel
+  { } // sentinel
 };
 */
 
@@ -399,14 +446,16 @@ PyModuleDef py_module = {
 } // end histograms namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
-  static constexpr std::array<
-    std::tuple<PyTypeObject*,const char*>, 1
-  > py_types {{
-    { &histograms::hist::py_type, "histogram" }
-  }};
+  struct {
+    PyTypeObject* ptr;
+    const char* name;
+  } static constexpr py_types[] {
+    { &histograms::hist::py_type, "histogram" },
+    { &histograms::axis::py_type, "axis" }
+  };
 
   for (const auto& py_type : py_types) {
-    if (PyType_Ready(std::get<0>(py_type)) < 0) return nullptr;
+    if (PyType_Ready(py_type.ptr) < 0) return nullptr;
   }
 
   PyObject* m = PyModule_Create(&histograms::py_module);
@@ -414,14 +463,14 @@ PyMODINIT_FUNC PyInit_histograms() {
 
   unsigned n = 0;
   for (const auto& py_type : py_types) {
-    Py_INCREF(std::get<0>(py_type));
+    Py_INCREF(py_type.ptr);
     ++n;
     if ( PyModule_AddObject(
-      m, std::get<1>(py_type),
-      reinterpret_cast<PyObject*>(std::get<0>(py_type)) ) < 0
+      m, py_type.name,
+      reinterpret_cast<PyObject*>(py_type.ptr) ) < 0
     ) {
       do {
-        Py_DECREF(std::get<0>(py_types[--n]));
+        Py_DECREF(py_types[--n].ptr);
       } while (n);
       Py_DECREF(m);
       return nullptr;
