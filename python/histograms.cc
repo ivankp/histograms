@@ -183,16 +183,14 @@ template <typename T>
 void destroy(T* x) noexcept { x->~T(); }
 
 template <typename T>
-void dealloc(T* self) noexcept {
+void dealloc(PyObject* self) noexcept {
   static_assert(alignof(T)==alignof(PyObject));
-  // call destructor
-  destroy(self);
-  // free memory
-  Py_TYPE(self)->tp_free(reinterpret_cast<PyObject*>(self));
+  destroy(reinterpret_cast<T*>(self)); // call destructor
+  Py_TYPE(self)->tp_free(self); // free memory
 }
 
 template <typename T>
-int init(T* mem, PyObject* args, PyObject* kwargs) noexcept {
+int init(PyObject* mem, PyObject* args, PyObject* kwargs) noexcept {
   try {
     new(mem) T(args,kwargs);
   } catch (...) {
@@ -203,8 +201,8 @@ int init(T* mem, PyObject* args, PyObject* kwargs) noexcept {
 }
 
 template <typename T>
-PyObject* call(T* self, PyObject* args, PyObject* kwargs) noexcept {
-  return (*self)(args,kwargs);
+PyObject* call(PyObject* self, PyObject* args, PyObject* kwargs) noexcept {
+  return (*reinterpret_cast<T*>(self))(args,kwargs);
 }
 
 py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
@@ -301,11 +299,12 @@ struct py_axis {
   const type& operator*() const { return *axis; }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
+    TEST(__PRETTY_FUNCTION__)
     Py_RETURN_NONE;
   }
 };
 
-PyMethodDef methods[] = {
+PyMethodDef methods[] {
   { "nbins", reinterpret_cast<PyCFunction>(
     +[](py_axis* self, PyObject* Py_UNUSED(ignored)) noexcept {
       return py((*self)->nbins());
@@ -330,18 +329,18 @@ PyMethodDef methods[] = {
   { }
 };
 
-PyTypeObject py_type = {
+PyTypeObject py_type {
   PyVarObject_HEAD_INIT(nullptr, 0)
   .tp_name = "histograms.axis",
   .tp_basicsize = sizeof(py_axis),
   .tp_itemsize = 0,
-  .tp_dealloc = reinterpret_cast<::destructor>( dealloc<py_axis> ),
-  .tp_call = reinterpret_cast<::ternaryfunc>( call<py_axis> ),
+  .tp_dealloc = dealloc<py_axis>,
+  .tp_call = call<py_axis>,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "axis object",
   .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = reinterpret_cast<::initproc>( init<py_axis> ),
+  .tp_init = init<py_axis>,
   .tp_new = PyType_GenericNew,
 };
 
@@ -379,11 +378,12 @@ struct py_hist {
   }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
+    TEST(__PRETTY_FUNCTION__)
     Py_RETURN_NONE;
   }
 };
 
-PyMethodDef methods[] = {
+PyMethodDef methods[] {
   { "size", reinterpret_cast<PyCFunction>(
     +[](py_hist* self, PyObject* Py_UNUSED(ignored)) noexcept {
       return py(self->h.size());
@@ -392,7 +392,7 @@ PyMethodDef methods[] = {
   { }
 };
 
-PySequenceMethods sq_methods = {
+PySequenceMethods sq_methods {
   .sq_length = reinterpret_cast<::lenfunc>(
     +[](py_hist* h) noexcept -> Py_ssize_t {
       return h->h.size();
@@ -408,33 +408,33 @@ PySequenceMethods sq_methods = {
   // ssizeargfunc sq_inplace_repeat;
 };
 
-PyTypeObject py_type = {
+PyTypeObject py_type {
   PyVarObject_HEAD_INIT(nullptr, 0)
   .tp_name = "histograms.histogram",
   .tp_basicsize = sizeof(py_hist),
   .tp_itemsize = 0,
-  .tp_dealloc = reinterpret_cast<::destructor>( dealloc<py_hist> ),
+  .tp_dealloc = dealloc<py_hist>,
   .tp_as_sequence = &sq_methods,
-  .tp_call = reinterpret_cast<::ternaryfunc>( call<py_hist> ),
+  .tp_call = call<py_hist>,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_doc = "histogram object",
   .tp_methods = methods,
   .tp_members = nullptr,
-  .tp_init = reinterpret_cast<::initproc>( init<py_hist> ),
+  .tp_init = init<py_hist>,
   .tp_new = PyType_GenericNew,
 };
 
 } // end hist namespace
 
 /*
-PyMethodDef methods[] = {
+PyMethodDef methods[] {
   { "histogram", make, METH_VARARGS | METH_KEYWORDS,
     "initializes a histogram" },
   { } // sentinel
 };
 */
 
-PyModuleDef py_module = {
+PyModuleDef py_module {
   PyModuleDef_HEAD_INIT,
   .m_name = "histograms",
   .m_doc = "Python bindings for the histograms library",

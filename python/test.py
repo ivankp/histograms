@@ -7,6 +7,7 @@ print(ax.find_bin_index(43))
 # print(ax.find_bin_index(15,2))
 print(ax.nbins())
 print(ax.nedges())
+ax()
 
 # # h = histogram(1,2) # should fail
 # # h = histogram([]) # should fail
