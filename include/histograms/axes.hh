@@ -65,11 +65,12 @@ private:
   container_type _edges;
 
 public:
-  container_axis() { }
-  container_axis(const container_axis&) = default;
-  container_axis(container_axis&&) = default;
-  container_axis& operator=(const container_axis&) = default;
-  container_axis& operator=(container_axis&&) = default;
+  container_axis() noexcept = default;
+  container_axis(const container_axis&) noexcept = default;
+  container_axis(container_axis&&) noexcept = default;
+  container_axis& operator=(const container_axis&) noexcept = default;
+  container_axis& operator=(container_axis&&) noexcept = default;
+  ~container_axis() = default;
 
   container_axis(const container_type& edges): _edges(edges) { }
   container_axis(container_type&& edges)
@@ -140,11 +141,12 @@ private:
   edge_type _min, _max;
 
 public:
-  uniform_axis() { }
-  uniform_axis(const uniform_axis&) = default;
-  uniform_axis(uniform_axis&&) = default;
-  uniform_axis& operator=(const uniform_axis&) = default;
-  uniform_axis& operator=(uniform_axis&&) = default;
+  uniform_axis() noexcept = default;
+  uniform_axis(const uniform_axis&) noexcept = default;
+  uniform_axis(uniform_axis&&) noexcept = default;
+  uniform_axis& operator=(const uniform_axis&) noexcept = default;
+  uniform_axis& operator=(uniform_axis&&) noexcept = default;
+  ~uniform_axis() = default;
 
   uniform_axis(index_type nbins, edge_type min, edge_type max) noexcept
   : _nbins(nbins), _min(std::min(min,max)), _max(std::max(min,max)) { }

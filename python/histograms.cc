@@ -135,9 +135,9 @@ void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
 
 class py_ptr {
 protected:
-  PyObject* p;
+  PyObject* p = nullptr;
 public:
-  py_ptr() noexcept: p(nullptr) { }
+  py_ptr() noexcept = default;
   explicit py_ptr(PyObject* p) noexcept: p(p) {
     // should not increment reference count here
     // because it is usually already incremented by python
@@ -149,10 +149,9 @@ public:
     p = o.p;
     return *this;
   }
-  py_ptr(py_ptr&& o) noexcept: p(o.p) { o.p = nullptr; }
+  py_ptr(py_ptr&& o) noexcept { std::swap(p,o.p); }
   py_ptr& operator=(py_ptr&& o) noexcept {
-    p = o.p;
-    o.p = nullptr;
+    std::swap(p,o.p);
     return *this;
   }
   ~py_ptr() { if (p) Py_DECREF(p); }
@@ -193,8 +192,8 @@ namespace axis {
 
 [[noreturn]] void uniform_args_error() {
   throw error(PyExc_ValueError,
-    "uniform axis arguments must have the form"
-    "[nbins,min,max] or [nbins,min,max,\"log\"]");
+    "uniform axis arguments must be of the form"
+    " [nbins,min,max] or [nbins,min,max,\"log\"]");
 }
 
 using edge_type = double;
@@ -370,12 +369,36 @@ PyTypeObject py_type {
 
 } // end axis namespace
 
+PyObject* unpack_call(PyObject* callable, PyObject* args) noexcept {
+  PyObject* tuple;
+  if (PyTuple_Check(args)) {
+    tuple = args;
+  } else {
+    auto iter = get_iter(args);
+    if (!iter) return NULL;
+
+    Py_ssize_t pos = 0, size = 4;
+
+    tuple = PyTuple_New(size);
+
+    for (; ; ++pos) {
+      PyObject* arg = PyIter_Next(iter);
+      if (!arg) break;
+
+      if (pos==size) _PyTuple_Resize(&tuple, size*=2);
+
+      PyTuple_SET_ITEM(tuple,pos,arg);
+    }
+    if (pos!=size) _PyTuple_Resize(&tuple, pos);
+  }
+  return PyObject_CallObject(callable,tuple);
+}
+
 namespace hist {
 
 struct py_hist {
   PyObject_HEAD
 
-  // using axis_ptr = py_ptr<axis::py_axis>;
   struct axis_ptr: py_ptr {
     using py_ptr::py_ptr;
     const axis::py_axis::type& operator*() const noexcept {
@@ -399,10 +422,10 @@ struct py_hist {
       if (!arg) throw error(PyExc_TypeError,
         "empty list of histogram arguments");
       for (;;) { // loop over arguments
-        axes.emplace_back(
-          PyObject_CallObject(
-            reinterpret_cast<PyObject*>(&axis::py_type), arg)
-        );
+        PyObject* ax = unpack_call(
+          reinterpret_cast<PyObject*>(&axis::py_type), arg);
+        if (!ax) throw existing_error{};
+        axes.emplace_back(ax);
 
         arg = get_next(iter);
         if (!arg) break;

@@ -16,16 +16,20 @@ print(ax.nedges())
 print(axis((5,1,5)))
 print(axis((10,0,10),5.5,11,(9,10,100),71.5))
 
-# # h = histogram(1,2) # should fail
-# # h = histogram([]) # should fail
-# # h = histogram([(1,1),2,3,4,5]) # should fail
-# # h = histogram([1.,2,3,4,5])
-# # h = histogram([5,(0,5)])
-# h = histogram([1.,2,3,4,5],[5,(0,5)],[0])
-# # h = histogram()
-#
-# print("nbins =",h.nbins())
-# print("len =",len(h))
-#
+print()
+
+# h = histogram()
+h = histogram((1.,2,3,4,5))
+h = histogram([1.,2,3,4,5])
+# h = histogram(1,2) # should fail
+# h = histogram([]) # should fail
+# h = histogram([(1,1),2,3,4,5]) # should fail
+h = histogram([(5,0,5)])
+h = histogram([(3,1,4),5,(5,10,5)])
+h = histogram([(3,1,4),5,(5,10,5)],[1,5,10,50,100])
+
+print("size =",h.size())
+print("len =",len(h))
+
 # h()
 
