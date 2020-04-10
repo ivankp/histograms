@@ -141,20 +141,34 @@ public:
   explicit py_ptr(PyObject* p) noexcept: p(p) {
     // should not increment reference count here
     // because it is usually already incremented by python
+    std::cout << p << " created" << std::endl;
+    if (p) TEST(p->ob_type->tp_name)
   }
-  py_ptr(const py_ptr& o): p(o.p) { Py_INCREF(p); }
+  py_ptr(const py_ptr& o): p(o.p) {
+    Py_INCREF(p);
+    std::cout << __LINE__ << ' ' << o.p << ' ' << p << std::endl;
+  }
   py_ptr& operator=(const py_ptr& o) {
     Py_INCREF(o.p);
     if (p) Py_DECREF(p);
     p = o.p;
+    std::cout << __LINE__ << ' ' << o.p << ' ' << p << std::endl;
     return *this;
   }
-  py_ptr(py_ptr&& o) noexcept { std::swap(p,o.p); }
+  py_ptr(py_ptr&& o) noexcept {
+    std::swap(p,o.p);
+    std::cout << __LINE__ << ' ' << o.p << ' ' << p << std::endl;
+  }
   py_ptr& operator=(py_ptr&& o) noexcept {
     std::swap(p,o.p);
+    std::cout << __LINE__ << ' ' << o.p << ' ' << p << std::endl;
     return *this;
   }
-  ~py_ptr() { if (p) Py_DECREF(p); }
+  ~py_ptr() { if (p) {
+    std::cout << p << " DEC" << std::endl;
+    TEST(p->ob_type->tp_name)
+    Py_DECREF(p);
+  } }
 
   operator PyObject*() const noexcept { return p; }
 };
@@ -165,6 +179,7 @@ void destroy(T* x) noexcept { x->~T(); }
 template <typename T>
 void dealloc(T* self) noexcept {
   static_assert(alignof(T)==alignof(PyObject));
+  TEST(__PRETTY_FUNCTION__)
   destroy(self); // call destructor
   Py_TYPE(self)->tp_free(self); // free memory
 }
@@ -370,28 +385,31 @@ PyTypeObject py_type {
 } // end axis namespace
 
 PyObject* unpack_call(PyObject* callable, PyObject* args) noexcept {
-  PyObject* tuple;
-  if (PyTuple_Check(args)) {
-    tuple = args;
-  } else {
+  const bool convert = args && !PyTuple_Check(args);
+  if (convert) {
+    TEST(__LINE__)
     auto iter = get_iter(args);
     if (!iter) return NULL;
 
     Py_ssize_t pos = 0, size = 4;
 
-    tuple = PyTuple_New(size);
+    // https://docs.python.org/3/c-api/tuple.html
+    args = PyTuple_New(size);
 
     for (; ; ++pos) {
       PyObject* arg = PyIter_Next(iter);
       if (!arg) break;
 
-      if (pos==size) _PyTuple_Resize(&tuple, size*=2);
+      if (pos==size) _PyTuple_Resize(&args, size*=2);
 
-      PyTuple_SET_ITEM(tuple,pos,arg);
+      PyTuple_SET_ITEM(args,pos,arg);
     }
-    if (pos!=size) _PyTuple_Resize(&tuple, pos);
+    if (pos!=size) _PyTuple_Resize(&args, pos);
   }
-  return PyObject_CallObject(callable,tuple);
+  // https://docs.python.org/3/c-api/object.html#c.PyObject_CallObject
+  PyObject* obj = PyObject_CallObject(callable,args);
+  if (convert) Py_DECREF(args);
+  return obj;
 }
 
 namespace hist {
@@ -426,6 +444,7 @@ struct py_hist {
           reinterpret_cast<PyObject*>(&axis::py_type), arg);
         if (!ax) throw existing_error{};
         axes.emplace_back(ax);
+        // axes.emplace_back();
 
         arg = get_next(iter);
         if (!arg) break;
@@ -434,7 +453,28 @@ struct py_hist {
       return axes;
     }(args))
   {
-    // TODO: construct bin objects
+    // throw existing_error{};
+    throw std::runtime_error("test");
+    /*
+    PyObject* bintype = nullptr;
+    if (kwargs) {
+      bintype = PyDict_GetItemString(kwargs,"bintype");
+      TEST(bintype)
+      TEST(bintype->ob_type->tp_name)
+      TEST(PyType_Check(bintype))
+      if (bintype && !PyType_Check(bintype)) throw error(PyExc_TypeError,
+        "histogram bintype argument must be a type");
+    }
+    if (bintype) {
+      for (auto& bin : h.bins()) {
+        bin = py_ptr(PyObject_CallObject(bintype,nullptr));
+        if (!bin) throw existing_error{};
+      }
+    } else {
+      for (auto& bin : h.bins())
+        bin = py_ptr(py<double>(0.));
+    }
+    */
   }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
