@@ -1,5 +1,5 @@
 SHELL := bash
-CPPFLAGS := -std=c++17 -Iinclude
+CPPFLAGS := -std=c++20 -Iinclude
 CXXFLAGS := -Wall -O3 -flto -fmax-errors=3
 # CXXFLAGS := -Wall -g -fmax-errors=3
 

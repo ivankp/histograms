@@ -3,7 +3,7 @@
 
 #include <type_traits>
 
-namespace histograms {
+namespace ivanp::hist {
 
 template <typename T, typename...> struct pack_head { using type = T; };
 template <typename... T> using head_t = typename pack_head<T...>::type;

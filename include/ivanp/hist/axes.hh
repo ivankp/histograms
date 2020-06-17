@@ -5,8 +5,9 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
+#include <ivanp/concepts.hh>
 
-namespace histograms {
+namespace ivanp::hist {
 
 using index_type = unsigned;
 
@@ -42,53 +43,67 @@ struct poly_axis_base: axis_base<Edge> {
   virtual edge_type upper(index_type i) const = 0;
 };
 
-template <bool Poly, typename Edge>
-using axis_base_t = std::conditional_t< Poly,
-  poly_axis_base<Edge>, axis_base<Edge> >;
+template <typename Edge, bool Poly>
+using axis_base_t = std::conditional_t<
+  Poly, poly_axis_base<Edge>, axis_base<Edge> >;
 
-// Container axis ===================================================
+template <typename A, typename Edge>
+concept Axis = requires (A a) {
+  { a.nedges()                             } -> convertible_to<index_type>;
+  { a.nbins()                              } -> convertible_to<index_type>;
+  { a.find_bin_index(std::declval<Edge>()) } -> convertible_to<index_type>;
+  { a.edge(std::declval<index_type>())     } -> convertible_to<Edge>;
+  { a.min()                                } -> convertible_to<Edge>;
+  { a.max()                                } -> convertible_to<Edge>;
+  { a.lower(std::declval<index_type>())    } -> convertible_to<Edge>;
+  { a.upper(std::declval<index_type>())    } -> convertible_to<Edge>;
+  typename A::edge_type;
+};
 
-template <typename Container=std::vector<double>, bool Poly=false>
-class container_axis final: public axis_base_t< Poly,
-  typename std::decay_t<Container>::value_type >
+// List axis ===================================================
+
+template <
+  typename List = std::vector<double>,
+  typename Edge = typename std::remove_reference_t<List>::value_type,
+  bool Poly = false
+>
+class list_axis final: public axis_base_t<Edge,Poly>
 {
 public:
-  using base_type = axis_base_t<
-    Poly, typename std::decay_t<Container>::value_type >;
-  using edge_type = typename base_type::edge_type;
-  using container_type = Container;
+  using base_type = axis_base_t<Edge,Poly>;
+  using edge_type = Edge;
+  using list_type = List;
 
   static constexpr edge_type lowest = axis_base<edge_type>::lowest;
   static constexpr edge_type highest = axis_base<edge_type>::lowest;
 
 private:
-  container_type _edges;
+  list_type _edges;
 
 public:
-  container_axis() noexcept = default;
-  container_axis(const container_axis&) noexcept = default;
-  container_axis(container_axis&&) noexcept = default;
-  container_axis& operator=(const container_axis&) noexcept = default;
-  container_axis& operator=(container_axis&&) noexcept = default;
-  ~container_axis() = default;
+  list_axis() noexcept = default;
+  list_axis(const list_axis&) noexcept = default;
+  list_axis(list_axis&&) noexcept = default;
+  list_axis& operator=(const list_axis&) noexcept = default;
+  list_axis& operator=(list_axis&&) noexcept = default;
+  ~list_axis() = default;
 
-  container_axis(const container_type& edges): _edges(edges) { }
-  container_axis(container_type&& edges)
-  noexcept(std::is_nothrow_move_constructible_v<container_type>)
+  list_axis(const list_type& edges): _edges(edges) { }
+  list_axis(list_type&& edges)
+  noexcept(std::is_nothrow_move_constructible_v<list_type>)
   : _edges(std::move(edges)) { }
-  container_axis& operator=(const container_type& edges) {
+  list_axis& operator=(const list_type& edges) {
     _edges = edges;
     return *this;
   }
-  container_axis& operator=(container_type&& edges)
-  noexcept(std::is_nothrow_move_assignable_v<container_type>)
-  {
+  list_axis& operator=(list_type&& edges)
+  noexcept(std::is_nothrow_move_assignable_v<list_type>) {
     _edges = std::move(edges);
     return *this;
   }
 
-  container_axis(std::initializer_list<edge_type> edges): _edges(edges) { }
-  container_axis& operator=(std::initializer_list<edge_type> edges) {
+  list_axis(std::initializer_list<edge_type> edges): _edges(edges) { }
+  list_axis& operator=(std::initializer_list<edge_type> edges) {
     _edges = edges;
     return *this;
   }
@@ -121,17 +136,17 @@ public:
     return find_bin_index(x);
   }
 
-  const container_type& edges() const noexcept { return _edges; }
+  const list_type& edges() const noexcept { return _edges; }
 };
 
 // Uniform axis =====================================================
 
-template <typename EdgeT=double, bool Poly=false>
-class uniform_axis final: public axis_base_t< Poly, EdgeT >
+template <typename Edge = double, bool Poly = false>
+class uniform_axis final: public axis_base_t<Edge,Poly>
 {
 public:
-  using base_type = axis_base_t< Poly, EdgeT >;
-  using edge_type = typename base_type::edge_type;
+  using base_type = axis_base_t<Edge,Poly>;
+  using edge_type = Edge;
 
   static constexpr edge_type lowest = axis_base<edge_type>::lowest;
   static constexpr edge_type highest = axis_base<edge_type>::lowest;
@@ -149,7 +164,10 @@ public:
   ~uniform_axis() = default;
 
   uniform_axis(index_type nbins, edge_type min, edge_type max) noexcept
-  : _nbins(nbins), _min(std::min(min,max)), _max(std::max(min,max)) { }
+  : _nbins(nbins), _min(min), _max(max)
+  {
+    if (_max < _min) std::swap(_min,_max);
+  }
 
   index_type nedges() const noexcept { return _nbins+1; }
   index_type nbins() const noexcept { return _nbins; }
@@ -182,6 +200,6 @@ public:
   }
 };
 
-} // end namespace histograms
+} // end namespace ivanp::hist
 
 #endif

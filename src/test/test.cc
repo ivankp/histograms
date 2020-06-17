@@ -15,14 +15,14 @@
   std::cout << std::endl; \
 }
 
-#include <histograms/histograms.hh>
+#include <ivanp/hist/histograms.hh>
 
 using std::cout;
 using std::endl;
 
 int main(int argc, char* argv[]) {
 
-  histograms::histogram h1({
+  ivanp::hist::histogram h1({
     {1,10,100,1000},
     {}, {1}, {1}, {1}
   });
@@ -35,9 +35,9 @@ int main(int argc, char* argv[]) {
   cout << endl;
 
   cout << endl;
-  histograms::histogram<
+  ivanp::hist::histogram<
     double,
-    std::array<histograms::uniform_axis<double>,2>
+    std::array<ivanp::hist::uniform_axis<double>,2>
   > h2({{{9,1,10},{4,0,20}}});
   CHECK(h2.axes()[0].nedges(), 10)
   CHECK(h2.axes()[1].nedges(), 5)
@@ -59,14 +59,14 @@ int main(int argc, char* argv[]) {
 
   cout << endl;
   // shared axis
-  auto a3 = std::make_shared<histograms::container_axis<>>(
+  auto a3 = std::make_shared<ivanp::hist::list_axis<>>(
     std::vector<double>{10,20,30});
-  histograms::histogram<
+  ivanp::hist::histogram<
     int,
     std::tuple<
-      histograms::uniform_axis<unsigned,true>,
+      ivanp::hist::uniform_axis<unsigned,true>,
       decltype(a3) >,
-    histograms::bins_container_spec<std::list<int>>
+    ivanp::hist::bins_container_spec<std::list<int>>
   > h3({{4,1,5},a3});
   CHECK(h3.bins().size(), 24)
 
@@ -80,11 +80,11 @@ int main(int argc, char* argv[]) {
 
   TEST(std::get<1>(h3.axes()).use_count())
 
-  histograms::histogram<
+  ivanp::hist::histogram<
     double,
-    std::list<histograms::uniform_axis<double>>
+    std::list<ivanp::hist::uniform_axis<double>>
   > h4({{0,1,10}});
   CHECK(h4(0.4),1)
   CHECK(h4({0.4},1.5),2.5)
-  CHECK(h4(0.4,1.5),3.5)
+  // CHECK(h4(0.4,1.5),3.5)
 }

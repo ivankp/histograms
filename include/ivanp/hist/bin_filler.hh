@@ -1,9 +1,9 @@
 #ifndef IVANP_HISTOGRAMS_BIN_FILLER_HH
 #define IVANP_HISTOGRAMS_BIN_FILLER_HH
 
-#include <histograms/traits.hh>
+#include <ivanp/hist/traits.hh>
 
-namespace histograms {
+namespace ivanp::hist {
 
 struct bin_filler {
 
@@ -51,6 +51,6 @@ struct bin_filler {
 
 };
 
-} // end namespace histograms
+} // end namespace ivanp::hist
 
 #endif

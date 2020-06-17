@@ -12,13 +12,13 @@
   std::cout << std::endl; \
 }
 
-#include <histograms/histograms.hh>
+#include <ivanp/hist/histograms.hh>
 
 using std::cout;
 using std::endl;
 
 template <typename T>
-using hist = histograms::histogram<T>;
+using hist = ivanp::hist::histogram<T>;
 
 int main(int argc, char* argv[]) {
 

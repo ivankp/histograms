@@ -7,11 +7,11 @@
 #include <vector>
 #include <string>
 
-#include <histograms/axes.hh>
-#include <histograms/bin_filler.hh>
-#include <histograms/containers.hh>
+#include <ivanp/hist/axes.hh>
+#include <ivanp/hist/bin_filler.hh>
+#include <ivanp/map/map.hh>
 
-namespace histograms {
+namespace ivanp::hist {
 
 template <typename> struct bins_container_spec { };
 template <typename> struct is_bins_container_spec {
@@ -35,34 +35,59 @@ struct is_filler_spec<filler_spec<T>> {
 
 namespace detail {
 
-template <typename T>
+template <typename Axis>
+requires requires (Axis& a) { a.nedges(); }
 [[nodiscard, gnu::const, gnu::always_inline]]
-inline auto axis_ref(T& x) -> decltype(x.nedges(),x)
-{ return x; }
-
-template <typename T, decltype(std::declval<T&>()->nedges(),int{}) = 0>
-[[nodiscard, gnu::const, gnu::always_inline]]
-inline decltype(auto) axis_ref(T& x)
-{ return axis_ref(*x); }
+inline auto& axis_ref(Axis& a) { return a; }
 
 template <typename Axis>
-struct edge_type_from_axis {
-  using type = typename std::decay_t<
+requires requires (Axis& a) { a->nedges(); }
+[[nodiscard, gnu::const, gnu::always_inline]]
+inline auto& axis_ref(Axis& x) { return axis_ref(*x); }
+
+template <typename C, typename I>
+[[nodiscard, gnu::always_inline]]
+inline decltype(auto) at(C&& xs, I i) {
+  if constexpr (requires { xs[i]; }) return xs[i];
+  else if constexpr (requires { xs.at(i); }) return xs.at(i);
+}
+
+template <typename Axis>
+using axis_edge_type = typename std::remove_reference_t<
     decltype(axis_ref(std::declval<Axis&>()))
   >::edge_type;
+
+template <typename Axes>
+struct coord_arg { };
+
+template <typename Axes, typename Alloc>
+struct coord_arg<std::vector<Axes,Alloc>> {
+  using type = std::initializer_list<axis_edge_type<Axes>>;
+};
+
+template <typename... Axes>
+struct coord_arg<std::tuple<Axes...>> {
+  using type = std::tuple<axis_edge_type<Axes>...>;
+};
+
+template <typename Axes, size_t N>
+struct coord_arg<std::array<Axes,N>> {
+  using type = std::array<axis_edge_type<Axes>,N>;
 };
 
 template <typename Axes>
-using coord_arg_t = typename containers::transform<
-  Axes, detail::edge_type_from_axis >::arg_type;
+using coord_arg_t = typename coord_arg<Axes>::type;
 
-IVANP_MAKE_OP_TRAIT_1( has_coord_arg, std::declval<coord_arg_t<T>&>() )
+template <typename Axes>
+concept ValidCoordArg = requires {
+  typename coord_arg<Axes>::type;
+};
 
 }
 
 template <
   typename Bin = double,
-  typename Axes = std::vector<container_axis<std::vector<double>>>,
+  typename Axes = std::vector<list_axis<std::vector<double>>>,
   typename... Specs
 >
 class histogram {
@@ -77,7 +102,7 @@ public:
     is_filler_spec<Specs>...,
     is_filler_spec<filler_spec< bin_filler >>
   >::type;
-  using index_type = histograms::index_type;
+  using index_type = hist::index_type;
 
 private:
   axes_type _axes;
@@ -85,15 +110,13 @@ private:
 
   void resize_bins() {
     if constexpr (
-      containers::is_resizable<bins_container_type,size_t>::value
+      requires (index_type n) { _bins.resize(n); }
     ) {
-      if (containers::size(_axes) > 0) {
-        index_type n = 1;
-        containers::for_each([&n](const auto& a){
-          n *= detail::axis_ref(a).nedges()+1;
-        }, _axes);
-        _bins.resize(n);
-      }
+      index_type n = 1;
+      map::map([&n](const auto& a){
+        n *= detail::axis_ref(a).nedges()+1;
+      }, _axes);
+      _bins.resize(n);
     }
   }
 
@@ -113,7 +136,12 @@ public:
   const axes_type& axes() const noexcept { return _axes; }
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
-  auto size() const noexcept { return containers::size(_bins); }
+  auto size() const noexcept {
+    if constexpr (map::Tuple<bins_container_type>)
+      return std::tuple_size<bins_container_type>::value;
+    else
+      return std::size(_bins);
+  }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }
@@ -122,37 +150,27 @@ public:
 
   // ----------------------------------------------------------------
 
-  const bin_type& bin_at(index_type i) const {
-    return containers::at(_bins,i);
-  }
-  bin_type& bin_at(index_type i) {
-    return containers::at(_bins,i);
-  }
+  const bin_type& bin_at(index_type i) const { return detail::at(_bins,i); }
+  bin_type& bin_at(index_type i) { return detail::at(_bins,i); }
 
   index_type join_index(index_type i) const noexcept { return i; }
 
   template <typename T = std::initializer_list<index_type>>
-  auto join_index(const T& ii) const -> std::enable_if_t<
-    containers::has_either_size<T>::value &&
-    !std::is_convertible<T,index_type>::value,
-    index_type
-  > {
+  requires map::Container<T>
+  index_type join_index(const T& ii) const {
     index_type index = 0, n = 1;
-    containers::for_each([&](index_type i, const auto& a){
+    map::map([&](index_type i, const auto& a){
       index += i*n;
       n *= detail::axis_ref(a).nedges()+1;
     },ii,_axes);
     return index;
   }
 
-  template <typename... T>
-  auto join_index(const T&... ii) const
-  -> std::enable_if_t< (sizeof...(ii) > 1), index_type > {
-    // std::array is better here because of for_each
-    return join_index(std::array<index_type,sizeof...(ii)>{index_type(ii)...});
+  template <typename... I>
+  requires (sizeof...(I) > 1)
+  index_type join_index(const I&... i) const {
+    return join_index(std::array{index_type(i)...});
   }
-
-  index_type join_index() const { return 0; }
 
   const bin_type& bin_at(std::initializer_list<index_type> ii) const {
     return bin_at(join_index(ii));
@@ -176,12 +194,9 @@ public:
 
   // ----------------------------------------------------------------
 
-  template <typename T>
-  auto find_bin_index(const T& xs) const -> std::enable_if_t<
-    containers::has_either_size<const T>::value, index_type
-  > {
+  index_type find_bin_index(const map::Container auto& xs) const {
     index_type index = 0, n = 1;
-    containers::for_each([&](const auto& x, const auto& a){
+    map::map([&](const auto& x, const auto& a){
       index += detail::axis_ref(a).find_bin_index(x)*n;
       n *= detail::axis_ref(a).nedges()+1;
     },xs,_axes);
@@ -189,20 +204,10 @@ public:
   }
 
   template <typename... T>
-  auto find_bin_index(const T&... xs) const -> std::enable_if_t<
-    (sizeof...(T) > 1)
-    || !containers::has_either_size<const head_t<T...>>::value,
-    index_type
-  > {
-    // if constexpr (containers::has_tuple_size<axes_type>::value)
-    //   static_assert(std::tuple_size<axes_type>::value == sizeof...(xs));
+  requires (sizeof...(T) > 1) || (!map::Container<head_t<T...>>)
+  index_type find_bin_index(const T&... xs) const {
     return find_bin_index(std::forward_as_tuple(xs...));
   }
-
-  index_type find_bin_index() const { return 0; }
-  // TODO: should zero-argument functions of this type be allowed?
-  // TODO: should for_each make sure all input containers have been
-  //       completely iterated over?
 
   template <typename... T>
   const bin_type& find_bin(const T&... xs) const {
@@ -215,54 +220,53 @@ public:
 
   // ----------------------------------------------------------------
 
-  template <typename I = std::initializer_list<index_type>, typename... A>
-  decltype(auto) fill_at(const I& ii, A&&... as) {
-    return filler_type::fill(bin_at(ii),std::forward<A>(as)...);
+  template <typename I = std::initializer_list<index_type>, typename... Args>
+  decltype(auto) fill_at(const I& ii, Args&&... args) {
+    return filler_type::fill(bin_at(ii),std::forward<Args>(args)...);
   }
 
   // https://stackoverflow.com/q/60909588/2640636
 
-  decltype(auto) fill() { return filler_type::fill(find_bin()); }
+  // decltype(auto) fill() { return filler_type::fill(find_bin()); }
+  // decltype(auto) operator()() { return fill(); }
 
-  template <typename X, typename... A>
-  decltype(auto) fill(const X& xs, A&&... as) {
-    if constexpr (containers::has_either_size<const X>::value) {
-      return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
+  template <typename Coords, typename... Args>
+  decltype(auto) fill(const Coords& xs, Args&&... args) {
+    if constexpr (map::Container<Coords>) {
+      return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
     } else {
-      return filler_type::fill(find_bin(xs,as...));
+      return filler_type::fill(find_bin(xs,args...));
     }
   }
-  template <typename... T>
-  decltype(auto) operator()(const T&... xs) { return fill(xs...); }
-
-  template <typename X, typename... A,
-    typename = std::enable_if_t<
-      !detail::has_coord_arg<head_t<Axes,X>>::value
-    >
-  >
-  decltype(auto) fill(std::initializer_list<X> xs, A&&... as) {
-    return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
-  }
-  template <typename X, typename... A,
-    typename = std::enable_if_t<
-      !detail::has_coord_arg<head_t<Axes,X>>::value
-    >
-  >
-  decltype(auto) operator()(std::initializer_list<X> xs, A&&... as) {
-    return fill(xs,std::forward<A>(as)...);
+  template <typename Coords, typename... Args>
+  decltype(auto) operator()(const Coords& xs, Args&&... args) {
+    return fill(xs,args...);
   }
 
-  template <typename... A, typename X = detail::coord_arg_t<head_t<Axes,A...>>>
-  decltype(auto) fill(const head_t<X>& xs, A&&... as) {
-    return filler_type::fill(find_bin(xs),std::forward<A>(as)...);
+  template <typename... Args,
+    typename Coords = detail::coord_arg_t<head_t<Axes,Args...>> >
+  decltype(auto) fill(const head_t<Coords>& xs, Args&&... args) {
+    return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
   }
-  template <typename... A, typename X = detail::coord_arg_t<head_t<Axes,A...>>>
-  decltype(auto) operator()(const head_t<X>& xs, A&&... as) {
-    return fill(xs,std::forward<A>(as)...);
+  template <typename... Args,
+    typename Coords = detail::coord_arg_t<head_t<Axes,Args...>> >
+  decltype(auto) operator()(const head_t<Coords>& xs, Args&&... args) {
+    return fill(xs,std::forward<Args>(args)...);
+  }
+
+  template <typename Coord, typename... Args>
+  requires (!detail::ValidCoordArg<Axes>)
+  decltype(auto) fill(std::initializer_list<Coord> xs, Args&&... args) {
+    return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
+  }
+  template <typename Coord, typename... Args>
+  requires (!detail::ValidCoordArg<Axes>)
+  decltype(auto) operator()(std::initializer_list<Coord> xs, Args&&... args) {
+    return fill(xs,std::forward<Args>(args)...);
   }
 
 };
 
-} // end namespace histograms
+} // end namespace ivanp::hist
 
 #endif

@@ -1,4 +1,4 @@
-#include <histograms/containers.hh>
+#include <ivanp/hist/containers.hh>
 #include <iostream>
 #include <vector>
 #include <list>
@@ -6,7 +6,7 @@
 #define TEST(var) \
   std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
 
-using histograms::containers::for_each;
+using ivanp::hist::containers::for_each;
 using std::cout;
 using std::endl;
 

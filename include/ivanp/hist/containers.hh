@@ -4,9 +4,9 @@
 #include <tuple>
 #include <array>
 #include <vector>
-#include <histograms/traits.hh>
+#include <ivanp/hist/traits.hh>
 
-namespace histograms {
+namespace ivanp::hist {
 namespace containers {
 
 IVANP_MAKE_OP_TRAIT_2( is_indexable, std::declval<T&>()[std::declval<T2&>()] )
