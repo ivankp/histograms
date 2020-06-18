@@ -2,7 +2,7 @@
 #include <memory>
 #include <string_view>
 #include <sstream>
-#include <histograms/histograms.hh>
+#include <ivanp/hist/histograms.hh>
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -16,7 +16,7 @@
 #define TEST(var) \
   std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
 
-namespace histograms {
+namespace ivanp::hist {
 namespace {
 
 class existing_error { };
@@ -218,7 +218,7 @@ struct py_axis {
 
   using type = poly_axis_base<edge_type>;
   using uniform_axis_type = uniform_axis<edge_type,true>;
-  using container_axis_type = container_axis<std::vector<edge_type>,true>;
+  using list_axis_type = list_axis<std::vector<edge_type>,edge_type,true>;
 
   std::unique_ptr<type> axis;
 
@@ -287,7 +287,7 @@ struct py_axis {
       std::sort( begin(edges), end(edges) );
       edges.erase( std::unique( begin(edges), end(edges) ), end(edges) );
 
-      axis = std::make_unique<container_axis_type>(
+      axis = std::make_unique<list_axis_type>(
         std::move(edges)
       );
     }
@@ -352,7 +352,7 @@ PyObject* str(py_axis* self) noexcept {
                << " }";
   } else
   if (const auto* axis = dynamic_cast<
-    const py_axis::container_axis_type*
+    const py_axis::list_axis_type*
   >(ptr)) {
     ss << "axis: [ ";
     bool first = true;
@@ -366,21 +366,22 @@ PyObject* str(py_axis* self) noexcept {
   return py(ss.str());
 }
 
-PyTypeObject py_type {
-  PyVarObject_HEAD_INIT(nullptr, 0)
-  .tp_name = "histograms.axis",
-  .tp_basicsize = sizeof(py_axis),
-  .tp_itemsize = 0,
-  .tp_dealloc = (::destructor) dealloc<py_axis>,
-  .tp_call = (::ternaryfunc) call<py_axis>,
-  .tp_str = (::reprfunc) str,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-  .tp_doc = "axis object",
-  .tp_methods = methods,
-  .tp_members = nullptr,
-  .tp_init = (::initproc) init<py_axis>,
-  .tp_new = PyType_GenericNew,
-};
+struct py_type: PyTypeObject {
+  py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+    tp_name = "histograms.axis";
+    tp_basicsize = sizeof(py_axis);
+    // tp_itemsize = 0;
+    tp_dealloc = (::destructor) dealloc<py_axis>;
+    tp_call = (::ternaryfunc) call<py_axis>;
+    tp_str = (::reprfunc) str;
+    tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    tp_doc = "axis object";
+    tp_methods = methods;
+    // tp_members = nullptr;
+    tp_init = (::initproc) init<py_axis>;
+    tp_new = PyType_GenericNew;
+  }
+} py_type;
 
 } // end axis namespace
 
@@ -491,36 +492,39 @@ PyMethodDef methods[] {
   { }
 };
 
-PySequenceMethods sq_methods {
-  .sq_length = (::lenfunc) +[](py_hist* self) noexcept -> Py_ssize_t {
-    return self->h.size();
-  },
-  // binaryfunc sq_concat;
-  // ssizeargfunc sq_repeat;
-  // ssizeargfunc sq_item;
-  // void *was_sq_slice;
-  // ssizeobjargproc sq_ass_item;
-  // void *was_sq_ass_slice;
-  // objobjproc sq_contains;
-  // binaryfunc sq_inplace_concat;
-  // ssizeargfunc sq_inplace_repeat;
-};
+struct sq_methods: PySequenceMethods {
+  sq_methods(): PySequenceMethods{ } {
+    sq_length = (::lenfunc) +[](py_hist* self) noexcept -> Py_ssize_t {
+      return self->h.size();
+    };
+    // binaryfunc sq_concat;
+    // ssizeargfunc sq_repeat;
+    // ssizeargfunc sq_item;
+    // void *was_sq_slice;
+    // ssizeobjargproc sq_ass_item;
+    // void *was_sq_ass_slice;
+    // objobjproc sq_contains;
+    // binaryfunc sq_inplace_concat;
+    // ssizeargfunc sq_inplace_repeat;
+  }
+} sq_methods;
 
-PyTypeObject py_type {
-  PyVarObject_HEAD_INIT(nullptr, 0)
-  .tp_name = "histograms.histogram",
-  .tp_basicsize = sizeof(py_hist),
-  .tp_itemsize = 0,
-  .tp_dealloc = (::destructor) dealloc<py_hist>,
-  .tp_as_sequence = &sq_methods,
-  .tp_call = (::ternaryfunc) call<py_hist>,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-  .tp_doc = "histogram object",
-  .tp_methods = methods,
-  .tp_members = nullptr,
-  .tp_init = (::initproc) init<py_hist>,
-  .tp_new = PyType_GenericNew,
-};
+struct py_type: PyTypeObject {
+  py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+    tp_name = "histograms.histogram";
+    tp_basicsize = sizeof(py_hist);
+    // tp_itemsize = 0;
+    tp_dealloc = (::destructor) dealloc<py_hist>;
+    tp_as_sequence = &sq_methods;
+    tp_call = (::ternaryfunc) call<py_hist>;
+    tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    tp_doc = "histogram object";
+    tp_methods = methods;
+    // tp_members = nullptr;
+    tp_init = (::initproc) init<py_hist>;
+    tp_new = PyType_GenericNew;
+  }
+} py_type;
 
 } // end hist namespace
 
@@ -532,13 +536,13 @@ PyMethodDef methods[] {
 };
 */
 
-PyModuleDef py_module {
-  PyModuleDef_HEAD_INIT,
-  .m_name = "histograms",
-  .m_doc = "Python bindings for the histograms library",
-  .m_size = -1,
-  // methods
-};
+struct py_module: PyModuleDef {
+  py_module(): PyModuleDef{ PyModuleDef_HEAD_INIT } {
+    m_name = "histograms";
+    m_doc = "Python bindings for the histograms library";
+    m_size = -1;
+  }
+} py_module;
 
 } // end anonymous namespace
 } // end histograms namespace
@@ -548,23 +552,22 @@ PyMODINIT_FUNC PyInit_histograms() {
     PyTypeObject* ptr;
     const char* name;
   } static constexpr py_types[] {
-    { &histograms::hist::py_type, "histogram" },
-    { &histograms::axis::py_type, "axis" }
+    { &ivanp::hist::hist::py_type, "histogram" },
+    { &ivanp::hist::axis::py_type, "axis" }
   };
 
-  for (const auto& py_type : py_types) {
-    if (PyType_Ready(py_type.ptr) < 0) return nullptr;
-  }
+  for (auto [ptr, name] : py_types)
+    if (PyType_Ready(ptr) < 0) return nullptr;
 
-  PyObject* m = PyModule_Create(&histograms::py_module);
+  PyObject* m = PyModule_Create(&ivanp::hist::py_module);
   if (!m) return nullptr;
 
   unsigned n = 0;
-  for (const auto& py_type : py_types) {
-    Py_INCREF(py_type.ptr);
+  for (auto [ptr, name] : py_types) {
+    Py_INCREF(ptr);
     ++n;
     if ( PyModule_AddObject(
-      m, py_type.name, reinterpret_cast<PyObject*>(py_type.ptr) ) < 0
+      m, name, reinterpret_cast<PyObject*>(ptr) ) < 0
     ) {
       do {
         Py_DECREF(py_types[--n].ptr);

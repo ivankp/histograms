@@ -1,6 +1,6 @@
-CPPFLAGS = -std=c++17 -I../include
-CXXFLAGS := -Wall -g -fmax-errors=3
-# CXXFLAGS := -Wall -O3 -flto -fmax-errors=3
+CPPFLAGS = -std=c++20 -I../include
+CXXFLAGS := -Wall -O3 -flto -fmax-errors=3
+# CXXFLAGS := -Wall -g -fmax-errors=3
 
 # generate .d file during compilation
 CPPFLAGS += -MT $@ -MMD -MP -MF $*.d
