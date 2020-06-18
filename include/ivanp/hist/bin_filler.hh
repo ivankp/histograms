@@ -1,53 +1,53 @@
 #ifndef IVANP_HISTOGRAMS_BIN_FILLER_HH
 #define IVANP_HISTOGRAMS_BIN_FILLER_HH
 
-#include <ivanp/hist/traits.hh>
+#include <functional>
+#include <ivanp/traits.hh>
 
 namespace ivanp::hist {
+
+template <typename T>
+concept can_pre_increment = requires (T& x) { ++x; };
+template <typename T>
+concept can_post_increment = requires (T& x) { x++; };
+template <typename T, typename Arg>
+concept can_increment_by = requires (T& x, Arg arg) { x += arg; };
+template <typename F, typename... Args>
+concept can_invoke = std::is_invocable_v<F,Args...>;
 
 struct bin_filler {
 
   template <typename Bin>
-  static std::enable_if_t<
-    has_pre_increment<Bin>::value,
-    Bin&
-  >
-  fill(Bin& bin) noexcept(noexcept(++bin)) { return ++bin; }
+  requires can_pre_increment<Bin>
+  static decltype(auto) fill(Bin& bin)
+  noexcept(noexcept(++bin))
+  { return ++bin; }
 
   template <typename Bin>
-  static std::enable_if_t<
-    !has_pre_increment<Bin>::value &&
-    has_post_increment<Bin>::value,
-    Bin&
-  >
-  fill(Bin& bin) noexcept(noexcept(bin++)) { return bin++; }
+  requires (!can_pre_increment<Bin>) && can_post_increment<Bin>
+  static decltype(auto) fill(Bin& bin)
+  noexcept(noexcept(bin++))
+  { return bin++; }
 
   template <typename Bin>
-  static std::enable_if_t<
-    !has_pre_increment<Bin>::value &&
-    !has_post_increment<Bin>::value &&
-    is_callable<Bin>::value,
-    Bin&
-  >
-  fill(Bin& bin) noexcept(noexcept(bin())) { return bin(); }
+  requires (!can_pre_increment<Bin>) && (!can_post_increment<Bin>)
+        && can_invoke<Bin&>
+  static decltype(auto) fill(Bin& bin)
+  noexcept(std::is_nothrow_invocable_v<Bin&>)
+  { return std::invoke(bin); }
 
   template <typename Bin, typename T>
-  static std::enable_if_t<
-    has_plus_eq<Bin,T>::value,
-    Bin&
-  >
-  fill(Bin& bin, T&& x) noexcept(noexcept(bin += std::forward<T>(x)))
+  requires can_increment_by<Bin,T&&>
+  static decltype(auto) fill(Bin& bin, T&& x)
+  noexcept(noexcept(bin += std::forward<T>(x)))
   { return bin += std::forward<T>(x); }
 
   template <typename Bin, typename T1, typename... TT>
-  static std::enable_if_t<
-    ( sizeof...(TT) || !has_plus_eq<Bin,T1>::value ) &&
-    is_callable<Bin,T1,TT...>::value,
-    Bin&
-  >
-  fill(Bin& bin, T1&& arg1, TT&&... args)
-  noexcept(noexcept(bin(std::forward<T1>(arg1), std::forward<TT>(args)...)))
-  { return bin(std::forward<T1>(arg1), std::forward<TT>(args)...); }
+  requires ( sizeof...(TT) || !can_increment_by<Bin,T1&&>)
+        && can_invoke<Bin,T1&&,TT&&...>
+  static decltype(auto) fill(Bin& bin, T1&& x1, TT&&... xs)
+  noexcept(std::is_nothrow_invocable_v<Bin&,T1&&,TT&&...>)
+  { return std::invoke(bin, std::forward<T1>(x1), std::forward<TT>(xs)...); }
 
 };
 

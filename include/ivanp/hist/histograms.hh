@@ -60,6 +60,7 @@ using axis_edge_type = typename std::remove_reference_t<
 template <typename Axes>
 struct coord_arg { };
 
+// TODO: generalized set of these types
 template <typename Axes, typename Alloc>
 struct coord_arg<std::vector<Axes,Alloc>> {
   using type = std::initializer_list<axis_edge_type<Axes>>;
@@ -113,7 +114,7 @@ private:
       requires (index_type n) { _bins.resize(n); }
     ) {
       index_type n = 1;
-      map::map([&n](const auto& a){
+      map::map([&n](const auto& a) {
         n *= detail::axis_ref(a).nedges()+1;
       }, _axes);
       _bins.resize(n);
@@ -159,10 +160,10 @@ public:
   requires map::Container<T>
   index_type join_index(const T& ii) const {
     index_type index = 0, n = 1;
-    map::map([&](index_type i, const auto& a){
+    map::map([&](index_type i, const auto& a) {
       index += i*n;
       n *= detail::axis_ref(a).nedges()+1;
-    },ii,_axes);
+    }, ii, _axes);
     return index;
   }
 
@@ -196,10 +197,10 @@ public:
 
   index_type find_bin_index(const map::Container auto& xs) const {
     index_type index = 0, n = 1;
-    map::map([&](const auto& x, const auto& a){
+    map::map([&](const auto& x, const auto& a) {
       index += detail::axis_ref(a).find_bin_index(x)*n;
       n *= detail::axis_ref(a).nedges()+1;
-    },xs,_axes);
+    }, xs, _axes);
     return index;
   }
 
@@ -225,23 +226,19 @@ public:
     return filler_type::fill(bin_at(ii),std::forward<Args>(args)...);
   }
 
-  // https://stackoverflow.com/q/60909588/2640636
-
-  // decltype(auto) fill() { return filler_type::fill(find_bin()); }
-  // decltype(auto) operator()() { return fill(); }
-
   template <typename Coords, typename... Args>
   decltype(auto) fill(const Coords& xs, Args&&... args) {
-    if constexpr (map::Container<Coords>) {
+    if constexpr (map::Container<Coords>)
       return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
-    } else {
+    else
       return filler_type::fill(find_bin(xs,args...));
-    }
   }
   template <typename Coords, typename... Args>
   decltype(auto) operator()(const Coords& xs, Args&&... args) {
     return fill(xs,args...);
   }
+
+  // https://stackoverflow.com/q/60909588/2640636
 
   template <typename... Args,
     typename Coords = detail::coord_arg_t<head_t<Axes,Args...>> >
