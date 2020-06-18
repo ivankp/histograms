@@ -218,7 +218,7 @@ struct py_axis {
 
   using type = poly_axis_base<edge_type>;
   using uniform_axis_type = uniform_axis<edge_type,true>;
-  using list_axis_type = list_axis<std::vector<edge_type>,edge_type,true>;
+  using list_axis_type = list_axis<std::vector<edge_type>,true>;
 
   std::unique_ptr<type> axis;
 

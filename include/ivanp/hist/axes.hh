@@ -64,8 +64,8 @@ concept Axis = requires (A a) {
 
 template <
   typename List = std::vector<double>,
-  typename Edge = typename std::remove_reference_t<List>::value_type,
-  bool Poly = false
+  bool Poly = false,
+  typename Edge = typename std::remove_reference_t<List>::value_type
 >
 class list_axis final: public axis_base_t<Edge,Poly>
 {

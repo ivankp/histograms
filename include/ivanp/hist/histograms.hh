@@ -60,7 +60,6 @@ using axis_edge_type = typename std::remove_reference_t<
 template <typename Axes>
 struct coord_arg { };
 
-// TODO: generalized set of these types
 template <typename Axes, typename Alloc>
 struct coord_arg<std::vector<Axes,Alloc>> {
   using type = std::initializer_list<axis_edge_type<Axes>>;
