@@ -2,6 +2,7 @@
 #define IVANP_PYTHON_CPP_HH
 
 #include <stdexcept>
+#include <type_traits>
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -169,26 +170,50 @@ void tp_dealloc(T* self) noexcept {
 }
 
 template <typename T>
-PyObject* tp_new(PyTypeObject* subtype, PyObject* args, PyObject* kwargs) {
-  try {
-    PyObject* obj = subtype->tp_alloc(subtype,0);
+PyObject* tp_new(PyTypeObject* subtype, PyObject* args, PyObject* kwargs)
+noexcept {
+  PyObject* obj = subtype->tp_alloc(subtype,0);
+  if constexpr (std::is_nothrow_constructible_v<T,PyObject*,PyObject*>) {
     new(reinterpret_cast<T*>(obj)) T(args,kwargs);
     return obj;
-  } catch (const std::exception& e) {
-    PyErr_SetString(PyExc_RuntimeError, e.what());
-    return nullptr;
+  } else {
+    try {
+      new(reinterpret_cast<T*>(obj)) T(args,kwargs);
+      return obj;
+    } catch (...) {
+      lipp();
+      return nullptr;
+    }
   }
 }
 
 template <typename T>
-PyObject* tp_call(T* self, PyObject* args, PyObject* kwargs)
-noexcept(noexcept((*self)(args,kwargs)))
-{ return (*self)(args,kwargs); }
+PyObject* tp_call(T* self, PyObject* args, PyObject* kwargs) noexcept {
+  if constexpr (noexcept((*self)(args,kwargs))) {
+    return (*self)(args,kwargs);
+  } else {
+    try {
+      return (*self)(args,kwargs);
+    } catch (...) {
+      lipp();
+      return nullptr;
+    }
+  }
+}
 
 template <typename T>
-PyObject* tp_str(T* self)
-noexcept(noexcept(self->str()))
-{ return self->str(); }
+PyObject* tp_str(T* self) noexcept {
+  if constexpr (noexcept(self->str())) {
+    return self->str();
+  } else {
+    try {
+      return self->str();
+    } catch (...) {
+      lipp();
+      return nullptr;
+    }
+  }
+}
 
 } // end namespace
 

@@ -8,11 +8,14 @@
 // #define STR1(x) #x
 // #define STR(x) STR1(x)
 
-// #define ERROR_PREF __FILE__ ":" STR(__LINE__) ": "
-
+#ifndef NDEBUG
 #include <iostream>
-#define TEST(var) \
-  std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
+#define TEST(var) std::cout << \
+  "\033[33m" __LINE__ ": " \
+  "\033[36m" #var ":\033[0m " << (var) << std::endl;
+#else
+#define TEST(var)
+#endif
 
 namespace ivanp::hist {
 namespace {
@@ -134,20 +137,15 @@ struct py_axis {
   base_type& operator*() { return *axis; }
   const base_type& operator*() const { return *axis; }
 
-  PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
-    try {
-      auto iter = get_iter(args);
-      if (!iter) throw existing_error{};
+  PyObject* operator()(PyObject* args, PyObject* kwargs) {
+    auto iter = get_iter(args);
+    if (!iter) throw existing_error{};
 
-      auto arg = get_next(iter);
-      if (!arg || get_next(iter)) throw error(PyExc_TypeError,
-        "axis call expression takes exactly one argument");
+    auto arg = get_next(iter);
+    if (!arg || get_next(iter)) throw error(PyExc_TypeError,
+      "axis call expression takes exactly one argument");
 
-      return py(axis->find_bin_index(unpy_check<edge_type>(arg)));
-    } catch (...) {
-      lipp();
-      return nullptr;
-    }
+    return py(axis->find_bin_index(unpy_check<edge_type>(arg)));
   }
 
   PyObject* str() noexcept {
