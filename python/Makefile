@@ -1,4 +1,4 @@
-CPPFLAGS = -std=c++20 -I../include
+CPPFLAGS = -std=c++20 -I. -I../include
 CXXFLAGS := -Wall -O3 -flto -fmax-errors=3
 # CXXFLAGS := -Wall -g -fmax-errors=3
 
@@ -10,7 +10,7 @@ PYTHON_INCLUDE := $(shell \
 
 histograms.o: CPPFLAGS += -DNDEBUG -isystem $(PYTHON_INCLUDE)
 histograms.o: CXXFLAGS += -fPIC -fwrapv
-histograms.so: LDFLAGS += -shared -pthread
+histograms.so: LDFLAGS += -shared # -pthread
 
 LIBNAME := histograms
 
