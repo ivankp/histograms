@@ -60,9 +60,11 @@ using axis_edge_type = typename std::remove_reference_t<
 template <typename Axes>
 struct coord_arg { };
 
-template <typename Axes, typename Alloc>
-struct coord_arg<std::vector<Axes,Alloc>> {
-  using type = std::initializer_list<axis_edge_type<Axes>>;
+template <typename Axes>
+requires requires { typename Axes::value_type; }
+struct coord_arg<Axes> {
+  using type = std::initializer_list<
+    axis_edge_type<typename Axes::value_type> >;
 };
 
 template <typename... Axes>
@@ -150,7 +152,6 @@ public:
 
   // ----------------------------------------------------------------
 
-  index_type join_index() const { return 0; } // allow no-arg fill
   index_type join_index(index_type i) const { return i; }
 
   template <typename T = std::initializer_list<index_type>>
@@ -207,8 +208,6 @@ public:
 
   // ----------------------------------------------------------------
 
-  index_type find_bin_index() const { return 0; }
-
   index_type find_bin_index(const map::Container auto& xs) const {
     index_type index = 0, n = 1;
     map::map([&](const auto& x, const auto& a) {
@@ -252,9 +251,10 @@ public:
   }
   template <typename Coords, typename... Args>
   decltype(auto) operator()(const Coords& xs, Args&&... args) {
-    return fill(xs,args...);
+    return fill(xs,std::forward<Args>(args)...);
   }
 
+  // Allow to brace-initialize coordinate arg
   // https://stackoverflow.com/q/60909588/2640636
 
   template <typename... Args,
