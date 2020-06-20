@@ -150,10 +150,8 @@ public:
 
   // ----------------------------------------------------------------
 
-  const bin_type& bin_at(index_type i) const { return detail::at(_bins,i); }
-  bin_type& bin_at(index_type i) { return detail::at(_bins,i); }
-
-  index_type join_index(index_type i) const noexcept { return i; }
+  index_type join_index() const { return 0; } // allow no-arg fill
+  index_type join_index(index_type i) const { return i; }
 
   template <typename T = std::initializer_list<index_type>>
   requires map::Container<T>
@@ -167,10 +165,13 @@ public:
   }
 
   template <typename... I>
-  requires (sizeof...(I) > 1)
+  requires (sizeof...(I) != 1)
   index_type join_index(const I&... i) const {
-    return join_index(std::array{index_type(i)...});
+    return join_index(std::array<index_type,sizeof...(I)>{index_type(i)...});
   }
+
+  const bin_type& bin_at(index_type i) const { return detail::at(_bins,i); }
+  bin_type& bin_at(index_type i) { return detail::at(_bins,i); }
 
   const bin_type& bin_at(std::initializer_list<index_type> ii) const {
     return bin_at(join_index(ii));
@@ -188,11 +189,25 @@ public:
   }
 
   template <typename T = std::initializer_list<index_type>>
-  const bin_type& operator[](const T& ii) const { return bin_at(ii); }
+  const bin_type& operator[](const T& ii) const {
+    const index_type i = join_index(ii);
+    if constexpr (map::Sizable<bins_container_type>)
+      if (i >= _bins.size()) [[unlikely]]
+        throw std::out_of_range("histogram bin index out of bound");
+    return bin_at(i);
+  }
   template <typename T = std::initializer_list<index_type>>
-  bin_type& operator[](const T& ii) { return bin_at(ii); }
+  bin_type& operator[](const T& ii) {
+    const index_type i = join_index(ii);
+    if constexpr (map::Sizable<bins_container_type>)
+      if (i >= _bins.size()) [[unlikely]]
+        throw std::out_of_range("histogram bin index out of bound");
+    return bin_at(i);
+  }
 
   // ----------------------------------------------------------------
+
+  index_type find_bin_index() const { return 0; }
 
   index_type find_bin_index(const map::Container auto& xs) const {
     index_type index = 0, n = 1;
@@ -204,7 +219,7 @@ public:
   }
 
   template <typename... T>
-  requires (sizeof...(T) > 1) || (!map::Container<head_t<T...>>)
+  requires (sizeof...(T) != 1) || (!map::Container<head_t<T...>>)
   index_type find_bin_index(const T&... xs) const {
     return find_bin_index(std::forward_as_tuple(xs...));
   }
@@ -224,6 +239,9 @@ public:
   decltype(auto) fill_at(const I& ii, Args&&... args) {
     return filler_type::fill(bin_at(ii),std::forward<Args>(args)...);
   }
+
+  decltype(auto) fill() { return filler_type::fill(find_bin()); }
+  decltype(auto) operator()() { return filler_type::fill(find_bin()); }
 
   template <typename Coords, typename... Args>
   decltype(auto) fill(const Coords& xs, Args&&... args) {

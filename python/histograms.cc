@@ -77,8 +77,7 @@ struct py_axis {
     if (!arg) throw error(PyExc_TypeError,
       "empty list of axis arguments");
     for (;;) { // loop over arguments
-      auto subiter = get_iter(arg);
-      if (subiter) { // uniform chunk
+      if (auto subiter = get_iter(arg)) { // uniform chunk
         // strings are also iterable and will enter here
 
         auto subarg = get_next(subiter);
@@ -270,8 +269,36 @@ struct py_hist {
   }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
-    TEST(__PRETTY_FUNCTION__)
+    // auto iter = get_iter(args); // guaranteed tuple
+    // auto arg1 = get_next(iter);
+    // if (!arg1) return h();
+
+    // auto arg2 = get_next(iter);
+    // if (!arg1) return h(arg2);
+    //
+    // } else { // single edge
+    //   PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
+    //   h();
+    // }
     Py_RETURN_NONE;
+  }
+
+  PyObject* operator[](PyObject* args) {
+    PyObject* bin;
+    if (auto iter = get_iter(args)) {
+      auto arg = get_next(iter);
+      bin = h[unpy_check<index_type>(arg)];
+    } else { // single edge
+      PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
+      bin = h[unpy_check<index_type>(args)];
+    }
+    // const index_type ui = (i < 0) ? (h.size()+i) : i;
+
+    // TODO: wrap python iterables as c++ containers to use map()
+
+    // TODO: multiple indices
+    Py_INCREF(bin);
+    return bin;
   }
 }; // end py_hist ---------------------------------------------------
 
@@ -285,29 +312,21 @@ PyMethodDef hist_methods[] {
   { }
 };
 
-struct hist_sq_methods: PySequenceMethods {
-  hist_sq_methods(): PySequenceMethods{ } {
-    sq_length = (::lenfunc) +[](py_hist* self) noexcept -> Py_ssize_t {
+struct hist_mp_methods: PyMappingMethods {
+  hist_mp_methods(): PyMappingMethods{ } {
+    mp_length = (::lenfunc) +[](py_hist* self) noexcept -> Py_ssize_t {
       return self->h.size();
     };
-    // binaryfunc sq_concat;
-    // ssizeargfunc sq_repeat;
-    // ssizeargfunc sq_item;
-    // void *was_sq_slice;
-    // ssizeobjargproc sq_ass_item;
-    // void *was_sq_ass_slice;
-    // objobjproc sq_contains;
-    // binaryfunc sq_inplace_concat;
-    // ssizeargfunc sq_inplace_repeat;
+    mp_subscript = (::binaryfunc) ivanp::python::mp_subscript<py_hist>;
   }
-} hist_sq_methods;
+} hist_mp_methods;
 
 struct hist_py_type: PyTypeObject {
   hist_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
     tp_name = "histograms.histogram";
     tp_basicsize = sizeof(py_hist);
     tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_hist>;
-    tp_as_sequence = &hist_sq_methods;
+    tp_as_mapping = &hist_mp_methods;
     tp_call = (::ternaryfunc) ivanp::python::tp_call<py_hist>;
     // tp_str = (::reprfunc) ivanp::python::tp_str<py_hist>;
     tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;

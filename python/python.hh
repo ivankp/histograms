@@ -3,6 +3,7 @@
 
 #include <stdexcept>
 #include <type_traits>
+#include <ivanp/concepts.hh>
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -33,9 +34,6 @@ void lipp() noexcept { // Lippincott function
     PyErr_SetString(PyExc_RuntimeError,"");
   }
 }
-
-template <typename From, typename To>
-concept convertible_to = std::is_convertible_v<From, To>;
 
 template <typename T>
 concept stringlike = requires (T& x) {
@@ -175,10 +173,7 @@ noexcept {
     try {
       new(reinterpret_cast<T*>(obj)) T(args,kwargs);
       return obj;
-    } catch (...) {
-      lipp();
-      return nullptr;
-    }
+    } catch (...) { lipp(); return nullptr; }
   }
 }
 
@@ -189,10 +184,7 @@ PyObject* tp_call(T* self, PyObject* args, PyObject* kwargs) noexcept {
   } else {
     try {
       return (*self)(args,kwargs);
-    } catch (...) {
-      lipp();
-      return nullptr;
-    }
+    } catch (...) { lipp(); return nullptr; }
   }
 }
 
@@ -203,10 +195,29 @@ PyObject* tp_str(T* self) noexcept {
   } else {
     try {
       return self->str();
-    } catch (...) {
-      lipp();
-      return nullptr;
-    }
+    } catch (...) { lipp(); return nullptr; }
+  }
+}
+
+template <typename T>
+PyObject* sq_item(T* self, Py_ssize_t i) noexcept {
+  if constexpr (noexcept((*self)[i])) {
+    return (*self)[i];
+  } else {
+    try {
+      return (*self)[i];
+    } catch (...) { lipp(); return nullptr; }
+  }
+}
+
+template <typename T>
+PyObject* mp_subscript(T* self, PyObject* args) noexcept {
+  if constexpr (noexcept((*self)[args])) {
+    return (*self)[args];
+  } else {
+    try {
+      return (*self)[args];
+    } catch (...) { lipp(); return nullptr; }
   }
 }
 

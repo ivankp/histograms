@@ -83,8 +83,16 @@ int main(int argc, char* argv[]) {
   ivanp::hist::histogram<
     double,
     std::list<ivanp::hist::uniform_axis<double>>
-  > h4({{0,1,10}});
+  > h4({{0,1,10}}); // upper limit doesn't matter if zero bins
+  TEST(h4.size())
   CHECK(h4(0.4),1)
-  CHECK(h4({0.4},1.5),2.5)
-  // CHECK(h4(0.4,1.5),3.5)
+  CHECK(h4({0.5},1.5),2.5)
+  h4(5);
+  h4(15);
+  CHECK(h4[0],2.5)
+  CHECK(h4[1],2)
+  // CHECK(h4.bin_at(2),2.5) // out of bound, but doesn't check
+  // CHECK(h4[2],2.5) // out of bound, throws
+  // CHECK(h4[{2}],2.5) // out of bound, throws
+  // CHECK((h4[{2,2}]),2.5) // throws, too many indices
 }

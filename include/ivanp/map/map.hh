@@ -74,7 +74,7 @@ inline decltype(auto) map(F&& f, C&&... c) {
           if (first) {
             first = false;
             s = std::size(_c);
-          } else if (std::size(_c) != s)
+          } else if (std::size(_c) != s) [[unlikely]]
             throw std::length_error("containers of unequal size given to map");
         }
       };
@@ -134,7 +134,7 @@ inline decltype(auto) map(F&& f, C&&... c) {
                   && !(flags & flags::no_dynamic_size_check)
                   && !iter_t::has_size
                 ) {
-                  if (it == iter.end) throw std::length_error(
+                  if (it == iter.end) [[unlikely]] throw std::length_error(
                     "in map: iterable ended before tuples");
                 }
                 decltype(auto) x = *it;
@@ -173,11 +173,12 @@ inline decltype(auto) map(F&& f, C&&... c) {
         || sizeof...(K) == 1
         || (... && Sizable<C&>) // already checked
       ) {
-        if ((... || ( !std::get<K>(iterators) ))) return false;
+        // already proved equal length so only need to check first
+        if (!std::get<0>(iterators)) return false;
       } else {
         const size_t n_ended = (... + ( !std::get<K>(iterators) ));
         if (n_ended == sizeof...(K)) return false;
-        else if (n_ended != 0) throw std::length_error(
+        else if (n_ended != 0) [[unlikely]] throw std::length_error(
           "in map: container reached end before others");
       }
       return true;
