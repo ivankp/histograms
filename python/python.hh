@@ -9,11 +9,6 @@
 
 namespace ivanp::python {
 
-// template <typename T, typename Base>
-// concept derived_from =
-//   requires(T& x) { { x.ob_base } -> std::same_as<Base>; }
-//   && ( offsetof(T,ob_base) == 0 );
-
 class existing_error { };
 
 class error: public std::runtime_error {
@@ -24,7 +19,8 @@ public:
   PyObject* type() const { return _type; }
 };
 
-void lipp() noexcept { // https://youtu.be/-amJL3AyADI
+void lipp() noexcept { // Lippincott function
+  // https://youtu.be/-amJL3AyADI
   // https://docs.python.org/3/c-api/exceptions.html#standard-exceptions
   try {
     throw;
@@ -38,19 +34,13 @@ void lipp() noexcept { // https://youtu.be/-amJL3AyADI
   }
 }
 
-template <typename U>
-class is_string_like {
-  template <typename, typename = void>
-  struct impl : std::false_type { };
-  template <typename T>
-  struct impl<T, decltype((void)(
-    std::declval<T&>().data(), std::declval<T&>().size()
-  ))> : std::is_convertible<
-    decltype(std::declval<T&>().data()), const char*
-  > { };
-public:
-  using type = impl<U>;
-  static constexpr bool value = type::value;
+template <typename From, typename To>
+concept convertible_to = std::is_convertible_v<From, To>;
+
+template <typename T>
+concept stringlike = requires (T& x) {
+  { x.data() } -> convertible_to<const char*>;
+  { x.size() } -> convertible_to<size_t>;
 };
 
 template <typename T>
@@ -70,7 +60,7 @@ template <typename T>
   if constexpr (std::is_same_v<T,unsigned long long>) {
     return PyLong_FromUnsignedLongLong(x);
   } else
-  if constexpr (is_string_like<T>::value) {
+  if constexpr (stringlike<const T>) {
     return PyUnicode_FromStringAndSize(x.data(),x.size());
   }
 }
@@ -95,7 +85,7 @@ T unpy(PyObject* p) noexcept {
   if constexpr (std::is_same_v<T,bool>) {
     return PyObject_IsTrue(p);
   } else
-  if constexpr (is_string_like<T>::value) {
+  if constexpr (stringlike<const T>) {
     // https://docs.python.org/3/c-api/unicode.html
     const size_t len = PyUnicode_GET_DATA_SIZE(p);
     if (len==0) return { };
@@ -116,7 +106,7 @@ T unpy_check(PyObject* p) {
       return x;
     }
   } else
-  if constexpr (is_string_like<T>::value) {
+  if constexpr (stringlike<T>) {
     if (PyUnicode_READY(p)!=0)
       throw error(PyExc_ValueError,"could not read python object as a string");
     return unpy<T>(p);
@@ -156,6 +146,11 @@ public:
   ~py_ptr() { Py_XDECREF(p); }
 
   operator PyObject*() const noexcept { return p; }
+
+  PyObject* operator->() noexcept { return p; }
+  const PyObject* operator->() const noexcept { return p; }
+  PyObject& operator*() noexcept { return *p; }
+  const PyObject& operator*() const noexcept { return *p; }
 };
 
 py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }

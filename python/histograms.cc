@@ -3,15 +3,15 @@
 #include <sstream>
 
 #include <ivanp/hist/histograms.hh>
-#include <python_cpp.hh>
+#include <python.hh>
 
-// #define STR1(x) #x
-// #define STR(x) STR1(x)
+#define STR1(x) #x
+#define STR(x) STR1(x)
 
 #ifndef NDEBUG
 #include <iostream>
 #define TEST(var) std::cout << \
-  "\033[33m" __LINE__ ": " \
+  "\033[33m" STR(__LINE__) ": " \
   "\033[36m" #var ":\033[0m " << (var) << std::endl;
 #else
 #define TEST(var)
@@ -24,7 +24,6 @@ using namespace ivanp::python;
 PyObject* unpack_call(PyObject* callable, PyObject* args) noexcept {
   const bool convert = args && !PyTuple_Check(args);
   if (convert) {
-    TEST(__LINE__)
     auto iter = get_iter(args);
     if (!iter) return NULL;
 
@@ -237,12 +236,11 @@ struct py_hist {
       if (!arg) throw error(PyExc_TypeError,
         "empty list of histogram arguments");
       for (;;) { // loop over arguments
+        TEST(unpy<std::string_view>(Py_TYPE(arg)->tp_str(arg)))
         PyObject* ax = unpack_call(
-          reinterpret_cast<PyObject*>(&axis_py_type),
-          arg);
+          reinterpret_cast<PyObject*>(&axis_py_type), arg);
         if (!ax) throw existing_error{};
         axes.emplace_back(ax);
-        // axes.emplace_back();
 
         arg = get_next(iter);
         if (!arg) break;
@@ -251,14 +249,11 @@ struct py_hist {
       return axes;
     }(args))
   {
-    // throw existing_error{};
-    // throw std::runtime_error("test");
-    /*
     PyObject* bintype = nullptr;
     if (kwargs) {
       bintype = PyDict_GetItemString(kwargs,"bintype");
-      TEST(bintype)
       TEST(bintype->ob_type->tp_name)
+      TEST(reinterpret_cast<PyTypeObject*>(bintype)->tp_name)
       TEST(PyType_Check(bintype))
       if (bintype && !PyType_Check(bintype)) throw error(PyExc_TypeError,
         "histogram bintype argument must be a type");
@@ -272,7 +267,6 @@ struct py_hist {
       for (auto& bin : h.bins())
         bin = py_ptr(py<double>(0.));
     }
-    */
   }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
@@ -285,6 +279,9 @@ PyMethodDef hist_methods[] {
   { "size", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
       return py(self->h.size());
     }, METH_NOARGS, "total number of histogram bins, including overflow" },
+  { "bintype", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+      return self->h.bins().front()->ob_type;
+    }, METH_NOARGS, "type use for bin values" },
   { }
 };
 

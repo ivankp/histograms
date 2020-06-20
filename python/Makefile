@@ -8,7 +8,8 @@ CPPFLAGS += -MT $@ -MMD -MP -MF $*.d
 PYTHON_INCLUDE := $(shell \
   python3 -c 'import sysconfig; print(sysconfig.get_paths()["include"])')
 
-histograms.o: CPPFLAGS += -DNDEBUG -isystem $(PYTHON_INCLUDE)
+# histograms.o: CPPFLAGS += -DNDEBUG -isystem $(PYTHON_INCLUDE)
+histograms.o: CPPFLAGS += -isystem $(PYTHON_INCLUDE)
 histograms.o: CXXFLAGS += -fPIC -fwrapv
 histograms.so: LDFLAGS += -shared # -pthread
 
