@@ -2,6 +2,7 @@
 #include <array>
 #include <list>
 #include <memory>
+#include <map>
 
 #define TEST(var) \
   std::cout << "\033[36m" #var "\033[0m = " << var << std::endl;
@@ -19,6 +20,9 @@
 
 using std::cout;
 using std::endl;
+
+template <typename T>
+void show_type(T&& x) noexcept { cout << __PRETTY_FUNCTION__ << endl; }
 
 int main(int argc, char* argv[]) {
 
@@ -95,4 +99,18 @@ int main(int argc, char* argv[]) {
   // CHECK(h4[2],2.5) // out of bound, throws
   // CHECK(h4[{2}],2.5) // out of bound, throws
   // CHECK((h4[{2,2}]),2.5) // throws, too many indices
+
+  // map histogram can be used to prevent allocation of all bins
+  // for expensive bin types
+  ivanp::hist::histogram<
+    double,
+    std::tuple<ivanp::hist::uniform_axis<double>>,
+    ivanp::hist::bins_container_spec<std::map<unsigned,double>>
+  > hm({{5,0,10}});
+  show_type(hm.bins());
+  // TEST(hm.bins().size())
+  hm({6},54);
+  // TEST(hm.bins().size())
+  for (auto [key,val] : hm.bins())
+    cout << key << ": " << val << '\n';
 }
