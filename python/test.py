@@ -31,6 +31,14 @@ from histograms import histogram, axis
 # # h = histogram([(3,1,4),5,(5,10,5)],tup,bintype=float)
 #
 # # h = histogram(tup,tup,bintype='s')
+
+class hbin:
+    def __init__(self):
+        self.x = float(0)
+    def __iadd__(self,x):
+        self.x += x
+        return self
+
 h = histogram((1,2,3),[(5,0,10)],bintype=float)
 
 print("size =",h.size())

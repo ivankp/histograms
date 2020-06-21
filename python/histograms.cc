@@ -213,26 +213,11 @@ struct axis_py_type: PyTypeObject {
 
 struct py_bin_filler {
   static PyObject* fill(py_ptr& bin, PyObject* args) {
-    const auto tp = Py_TYPE(bin);
-    if (tp == &PyFloat_Type) {
-      reinterpret_cast<PyFloatObject*>(&*bin)->ob_fval
-        += unpy_check<double>(args);
+    PyObject* sum = PyNumber_InPlaceAdd(bin,args);
+    if (sum) [[likely]] {
+      if (sum != bin) bin = py_ptr(sum);
       return bin;
-    }
-    if (const auto nb = tp->tp_as_number) {
-      if (auto iadd = nb->nb_inplace_add)
-        return iadd(bin,args), bin;
-      if (auto add = nb->nb_add)
-        return bin = py_ptr(add(bin,args));
-    }
-    if (const auto sq = tp->tp_as_sequence) {
-      if (auto iadd = sq->sq_inplace_concat)
-        return iadd(bin,args), bin;
-      if (auto add = sq->sq_concat)
-        return bin = py_ptr(add(bin,args));
-    }
-    throw error(PyExc_TypeError,
-      "cannot add "s+(Py_TYPE(args)->tp_name)+" to "+(tp->tp_name));
+    } throw existing_error{};
   }
   static PyObject* fill(py_ptr& bin) {
     return fill(bin,py<int>(1));
