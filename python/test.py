@@ -31,12 +31,16 @@ from histograms import histogram, axis
 # # h = histogram([(3,1,4),5,(5,10,5)],tup,bintype=float)
 #
 # # h = histogram(tup,tup,bintype='s')
-h = histogram((1,2,3),[(5,0,10)])
+h = histogram((1,2,3),[(5,0,10)],bintype=float)
 
 print("size =",h.size())
 print("len =",len(h))
 
 print(h[0,])
+a = h(0,0)
+print(a)
+h()
+print(a)
 print(h[0])
 
 # print(h(2,1.5))

@@ -17,6 +17,8 @@
 #define TEST(var)
 #endif
 
+using namespace std::string_literals;
+
 namespace ivanp::hist {
 namespace {
 using namespace ivanp::python;
@@ -209,6 +211,34 @@ struct axis_py_type: PyTypeObject {
 
 // end axis defs ====================================================
 
+struct py_bin_filler {
+  static PyObject* fill(py_ptr& bin, PyObject* args) {
+    const auto tp = Py_TYPE(bin);
+    if (tp == &PyFloat_Type) {
+      reinterpret_cast<PyFloatObject*>(&*bin)->ob_fval
+        += unpy_check<double>(args);
+      return bin;
+    }
+    if (const auto nb = tp->tp_as_number) {
+      if (auto iadd = nb->nb_inplace_add)
+        return iadd(bin,args), bin;
+      if (auto add = nb->nb_add)
+        return bin = py_ptr(add(bin,args));
+    }
+    if (const auto sq = tp->tp_as_sequence) {
+      if (auto iadd = sq->sq_inplace_concat)
+        return iadd(bin,args), bin;
+      if (auto add = sq->sq_concat)
+        return bin = py_ptr(add(bin,args));
+    }
+    throw error(PyExc_TypeError,
+      "cannot add "s+(Py_TYPE(args)->tp_name)+" to "+(tp->tp_name));
+  }
+  static PyObject* fill(py_ptr& bin) {
+    return fill(bin,py<int>(1));
+  }
+};
+
 struct py_hist {
   PyObject_HEAD
 
@@ -221,7 +251,14 @@ struct py_hist {
       return &**this;
     }
   };
-  using hist = histogram< py_ptr, std::vector<axis_ptr> >;
+  // TODO: reduce indirection
+  // maybe construct py_hist subtypes for some inbuilt bin types
+
+  using hist = histogram<
+    py_ptr,
+    std::vector<axis_ptr>,
+    filler_spec<py_bin_filler>
+  >;
   hist h;
 
   py_hist(PyObject* args, PyObject* kwargs)
@@ -268,10 +305,14 @@ struct py_hist {
     }
   }
 
-  PyObject* operator()(PyObject* args, PyObject* kwargs) noexcept {
-    // auto iter = get_iter(args); // guaranteed tuple
+  PyObject* operator()(PyObject* args, PyObject* kwargs) {
+    // auto iter = get_iter(args);
     // auto arg1 = get_next(iter);
-    // if (!arg1) return h();
+    // if (!arg1)
+    PyObject* bin = h.fill_at(0);
+
+    Py_INCREF(bin);
+    return bin;
 
     // auto arg2 = get_next(iter);
     // if (!arg1) return h(arg2);
@@ -280,7 +321,7 @@ struct py_hist {
     //   PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
     //   h();
     // }
-    Py_RETURN_NONE;
+    // Py_RETURN_NONE;
   }
 
   PyObject* operator[](PyObject* args) {
