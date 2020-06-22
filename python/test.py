@@ -72,6 +72,3 @@ h2 = histogram((10,0,1))
 for b in h2:
     print(b)
 
-# print(h(2,1.5))
-# print(h[15+1])
-

@@ -24,33 +24,6 @@ namespace ivanp::hist {
 namespace {
 using namespace ivanp::python;
 
-PyObject* unpack_call(PyObject* callable, PyObject* args) noexcept {
-  const bool convert = args && !PyTuple_Check(args);
-  if (convert) {
-    auto iter = get_iter(args);
-    if (!iter) return NULL;
-
-    Py_ssize_t pos = 0, size = 4;
-
-    // https://docs.python.org/3/c-api/tuple.html
-    args = PyTuple_New(size);
-
-    for (; ; ++pos) {
-      PyObject* arg = PyIter_Next(iter);
-      if (!arg) break;
-
-      if (pos==size) _PyTuple_Resize(&args, size*=2);
-
-      PyTuple_SET_ITEM(args,pos,arg);
-    }
-    if (pos!=size) _PyTuple_Resize(&args, pos);
-  }
-  // https://docs.python.org/3/c-api/object.html#c.PyObject_CallObject
-  PyObject* obj = PyObject_CallObject(callable,args);
-  if (convert) Py_DECREF(args);
-  return obj;
-}
-
 using edge_type = double;
 
 struct py_axis {
@@ -259,7 +232,7 @@ struct py_hist {
         "empty list of histogram arguments");
       for (;;) { // loop over arguments
         TEST(unpy<std::string_view>(Py_TYPE(arg)->tp_str(arg)))
-        PyObject* ax = unpack_call(
+        PyObject* ax = call_with_iterable(
           reinterpret_cast<PyObject*>(&axis_py_type), arg);
         if (!ax) throw existing_error{};
         axes.emplace_back(ax);

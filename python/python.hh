@@ -154,6 +154,17 @@ public:
 py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
 py_ptr get_next(PyObject* iter) { return py_ptr(PyIter_Next(iter)); }
 
+PyObject* call_with_iterable(PyObject* callable, PyObject* args) noexcept {
+  // https://stackoverflow.com/q/61131975/2640636
+  // https://docs.python.org/3/c-api/sequence.html#c.PySequence_Tuple
+  const bool convert = args && !PyTuple_Check(args);
+  if (convert) args = PySequence_Tuple(args);
+  // https://docs.python.org/3/c-api/object.html#c.PyObject_CallObject
+  PyObject* obj = PyObject_CallObject(callable,args);
+  if (convert) Py_DECREF(args);
+  return obj;
+}
+
 // Type methods =====================================================
 
 template <typename T>
