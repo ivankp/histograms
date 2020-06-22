@@ -368,13 +368,77 @@ struct py_hist {
   }
 }; // end py_hist ---------------------------------------------------
 
+// TODO: implement fast call (since python 3.7)
+
+struct py_hist_iter {
+  PyObject_HEAD
+
+  decltype(std::declval<py_hist::hist&>().begin()) it;
+  decltype(std::declval<py_hist::hist&>().end  ()) end;
+
+  py_hist_iter(PyObject* args, PyObject* kwargs) noexcept
+  : py_hist_iter( reinterpret_cast<py_hist*>(PyTuple_GET_ITEM(args,0))->h )
+  { }
+
+  py_hist_iter(py_hist::hist& h) noexcept: it(h.begin()), end(h.end()) {
+    TEST(this)
+    TEST(h[0])
+    TEST(&(this->it))
+    TEST(*this->it)
+    TEST(Py_TYPE(h[0])->tp_name)
+    TEST(reinterpret_cast<PyFloatObject*>(&*h[0])->ob_fval)
+  }
+
+  // py_hist_iter(const py_hist_iter&) = default;
+  // py_hist_iter(py_hist_iter&&) = default;
+  //
+  // py_hist_iter& operator=(const py_hist_iter&) = default;
+  // py_hist_iter& operator=(py_hist_iter&&) = default;
+
+  // py_hist_iter(PyObject* args, PyObject* kwargs) {
+  //   TEST(args)
+  //   auto hist = PyTuple_GET_ITEM(args,0);
+  //   TEST(hist)
+  //   auto& h = reinterpret_cast<py_hist*>(PyTuple_GET_ITEM(args,0))->h;
+  //
+  //   it = h.begin();
+  //   end = h.end();
+  // }
+};
+
+struct hist_iter_py_type: PyTypeObject {
+  hist_iter_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+    tp_name = "histograms.histogram_iterator";
+    tp_basicsize = sizeof(py_hist_iter);
+    tp_new = (::newfunc) ivanp::python::tp_new<py_hist_iter>;
+    tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_hist_iter>;
+    tp_iternext = (::iternextfunc) +[](py_hist_iter* self) noexcept
+      -> PyObject* {
+        TEST(self)
+        TEST(Py_TYPE(self)->tp_name)
+        TEST(&(self->it))
+        TEST(*self->it)
+        return nullptr;
+        auto& it = self->it;
+        if (it == self->end) return nullptr;
+        PyObject* bin = *it;
+        TEST(bin)
+        ++it;
+        Py_INCREF(bin);
+        TEST(__FUNCTION__)
+        TEST( Py_TYPE(bin)->tp_name )
+        TEST( reinterpret_cast<PyFloatObject*>(bin)->ob_fval )
+        return bin;
+      };
+  }
+} hist_iter_py_type;
+
 PyMethodDef hist_methods[] {
   { "size", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
       return py(self->h.size());
     }, METH_NOARGS, "total number of histogram bins, including overflow" },
-  { "bintype", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
-      return self->h.bins().front()->ob_type;
-    }, METH_NOARGS, "type use for bin values" },
+  { "fill", (PyCFunction) ivanp::python::tp_call<py_hist>,
+    METH_VARARGS, "fill histogram bin at given coordinates" },
   { }
 };
 
@@ -399,6 +463,20 @@ struct hist_py_type: PyTypeObject {
     tp_doc = "histogram object";
     tp_methods = hist_methods;
     tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
+    tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
+      // TODO: more direct way to construct iterator?
+      TEST(__FUNCTION__)
+      PyObject* args = PyTuple_New(1);
+      reinterpret_cast<PyTupleObject*>(args)->ob_item[0] = self;
+      TEST(__FUNCTION__)
+      PyObject* iter = PyObject_CallObject(
+        reinterpret_cast<PyObject*>(&hist_iter_py_type), args );
+      Py_DECREF(args);
+      TEST(__FUNCTION__)
+      TEST(reinterpret_cast<py_hist_iter*>(iter))
+      TEST(*reinterpret_cast<py_hist_iter*>(iter)->it)
+      return iter;
+    };
   }
 } hist_py_type;
 
@@ -432,8 +510,9 @@ PyMODINIT_FUNC PyInit_histograms() {
     PyTypeObject* type;
     const char* name;
   } static constexpr py_types[] {
+    { &ivanp::hist::axis_py_type, "axis" },
     { &ivanp::hist::hist_py_type, "histogram" },
-    { &ivanp::hist::axis_py_type, "axis" }
+    { &ivanp::hist::hist_iter_py_type, "histogram_iterator" }
   };
 
   for (auto [type, name] : py_types)

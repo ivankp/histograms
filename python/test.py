@@ -50,7 +50,7 @@ print(h((0,-1),['a']))
 c = (0,-1)
 a = 'a'
 b = 'b'
-print(h(c,(1.1,a)))
+print(h.fill(c,(1.1,a)))
 print(h(c,[b]))
 # h()
 # h(1)
@@ -65,8 +65,12 @@ print(a)
 print(b)
 
 print(h([1.5,4],'x','y','z'))
-print(h[2,3])
-print(h[17])
+print(h[1,3])
+print(h[13])
+
+h2 = histogram((10,0,1))
+for b in h2:
+    print(b)
 
 # print(h(2,1.5))
 # print(h[15+1])
