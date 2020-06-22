@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from histograms import histogram, axis
+import gc
 
 # ax = axis(1,10,[6,20,50],100)
 # print(ax)
@@ -39,17 +40,24 @@ class hbin:
         self.x += x
         return self
 
-h = histogram((1,2,3),[(5,0,10)],bintype=float)
+h = histogram((1,2,3),[(5,0,10),11],bintype=float)
 
 print("size =",h.size())
 print("len =",len(h))
 
 print(h[0,])
-a = h(0,0)
-print(a)
-h()
-print(a)
+print(h(0,-1))
+c = (0,-1)
+print(h(c,1.1))
+# h()
+# h(1)
+# h(1,1,1)
+# h(tuple())
+# h(tuple(),3)
 print(h[0])
+
+gc.collect()
+print(c)
 
 # print(h(2,1.5))
 # print(h[15+1])

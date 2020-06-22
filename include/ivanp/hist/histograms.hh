@@ -144,6 +144,12 @@ public:
     else
       return std::size(_bins);
   }
+  auto naxes() const noexcept {
+    if constexpr (map::Tuple<axes_type>)
+      return std::tuple_size<axes_type>::value;
+    else
+      return std::size(_axes);
+  }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }

@@ -290,23 +290,55 @@ struct py_hist {
     }
   }
 
+  std::vector<double> get_coords(auto&& iter, auto&& arg) {
+    const unsigned n = h.naxes();
+    unsigned i = 0;
+    std::vector<double> coords(n);
+    while (arg) {
+      if (i==n) throw error(PyExc_ValueError,
+        "too many coordinates passed to histogram.fill()");
+      coords[i] = unpy_check<double>(arg);
+      arg = get_next(iter);
+      ++i;
+    }
+    if (i!=n) throw error(PyExc_ValueError,
+      "too few coordinates passed to histogram.fill()");
+    return coords;
+  }
+
   PyObject* operator()(PyObject* args, PyObject* kwargs) {
-    // auto iter = get_iter(args);
-    // auto arg1 = get_next(iter);
-    // if (!arg1)
-    PyObject* bin = h.fill_at(0);
+    auto iter = get_iter(args); // guaranteed tuple
+    PyObject* bin;
+    auto arg = get_next(iter);
+    if (!arg) { // no arguments
+      throw error(PyExc_ValueError,
+        "no arguments passed to histogram.fill()");
+    } else if (auto iter2 = get_iter(arg)) { // first arg is iterable
+      const auto coords = get_coords(iter2,get_next(iter2));
+      const unsigned nargs = PyTuple_GET_SIZE(args) - 1;
+      PyObject* fill_args;
+      if (nargs==0) {
+        fill_args = py<double>(1.);
+      } else {
+        auto arr1 = reinterpret_cast<PyTupleObject*>(args)->ob_item;
+        if (nargs==1) {
+          fill_args = arr1[1];
+        } else {
+          fill_args = PyTuple_New(nargs);
+          auto arr2 = reinterpret_cast<PyTupleObject*>(fill_args)->ob_item;
+          for (unsigned i=0; i<nargs; ++i)
+            arr2[i] = arr1[i+1];
+        }
+      }
+      bin = h(coords,fill_args);
+      Py_DECREF(fill_args); // TODO: check
+    } else { // first arg not iterable
+      PyErr_Clear();
+      bin = h(get_coords(iter,arg));
+    }
 
     Py_INCREF(bin);
     return bin;
-
-    // auto arg2 = get_next(iter);
-    // if (!arg1) return h(arg2);
-    //
-    // } else { // single edge
-    //   PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
-    //   h();
-    // }
-    // Py_RETURN_NONE;
   }
 
   PyObject* operator[](PyObject* args) {
@@ -319,6 +351,33 @@ struct py_hist {
       bin = h[unpy_check<index_type>(args)];
     }
     // const index_type ui = (i < 0) ? (h.size()+i) : i;
+    /*
+    PyObject* bin;
+    if (auto iter = get_iter(args)) { // multiple args
+      auto arg = get_next(iter);
+      TEST(arg)
+      if (auto iter2 = get_iter(arg)) { // first arg is iterable
+        TEST(iter2)
+        auto arg = get_next(iter2);
+        if (arg) { // first arg is empty
+          bin = h(get_coords(iter2,arg));
+        } else throw error(PyExc_ValueError,
+          "empty iterable passed as first argument to histogram.fill()");
+      } else if (arg) { // first arg not iterable
+        TEST(arg)
+        PyErr_Clear();
+        bin = h(get_coords(iter,arg));
+      } else {
+        TEST(__FUNCTION__)
+        throw error(PyExc_ValueError,
+        "empty iterable passed to histogram.fill()");
+      }
+    } else { // single arg
+      PyErr_Clear();
+      TEST(__FUNCTION__)
+      bin = h(unpy_check<double>(args));
+    }
+    */
 
     // TODO: wrap python iterables as c++ containers to use map()
 
