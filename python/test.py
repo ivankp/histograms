@@ -40,24 +40,33 @@ class hbin:
         self.x += x
         return self
 
-h = histogram((1,2,3),[(5,0,10),11],bintype=float)
+h = histogram((1,2,3),[(5,0,10),11],bintype=list)
 
 print("size =",h.size())
 print("len =",len(h))
 
-print(h[0,])
-print(h(0,-1))
+print(h[0])
+print(h((0,-1),['a']))
 c = (0,-1)
-print(h(c,1.1))
+a = 'a'
+b = 'b'
+print(h(c,(1.1,a)))
+print(h(c,[b]))
 # h()
 # h(1)
 # h(1,1,1)
 # h(tuple())
 # h(tuple(),3)
-print(h[0])
+print(h[0,0])
 
 gc.collect()
 print(c)
+print(a)
+print(b)
+
+print(h([1.5,4],'x','y','z'))
+print(h[2,3])
+print(h[17])
 
 # print(h(2,1.5))
 # print(h[15+1])

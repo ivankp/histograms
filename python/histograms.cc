@@ -1,4 +1,5 @@
 #include <memory>
+#include <algorithm>
 #include <string_view>
 #include <sstream>
 
@@ -325,13 +326,12 @@ struct py_hist {
           fill_args = arr1[1];
         } else {
           fill_args = PyTuple_New(nargs);
-          auto arr2 = reinterpret_cast<PyTupleObject*>(fill_args)->ob_item;
-          for (unsigned i=0; i<nargs; ++i)
-            arr2[i] = arr1[i+1];
+          std::copy(arr1+1, arr1+1+nargs,
+            reinterpret_cast<PyTupleObject*>(fill_args)->ob_item);
         }
       }
       bin = h(coords,fill_args);
-      Py_DECREF(fill_args); // TODO: check
+      if (nargs!=1) Py_DECREF(fill_args);
     } else { // first arg not iterable
       PyErr_Clear();
       bin = h(get_coords(iter,arg));
@@ -343,45 +343,26 @@ struct py_hist {
 
   PyObject* operator[](PyObject* args) {
     PyObject* bin;
-    if (auto iter = get_iter(args)) {
-      auto arg = get_next(iter);
-      bin = h[unpy_check<index_type>(arg)];
-    } else { // single edge
-      PyErr_Clear(); // https://stackoverflow.com/q/60471914/2640636
-      bin = h[unpy_check<index_type>(args)];
-    }
-    // const index_type ui = (i < 0) ? (h.size()+i) : i;
-    /*
-    PyObject* bin;
     if (auto iter = get_iter(args)) { // multiple args
+      const unsigned n = h.naxes();
+      unsigned i = 0;
+      std::vector<index_type> ii(n);
       auto arg = get_next(iter);
-      TEST(arg)
-      if (auto iter2 = get_iter(arg)) { // first arg is iterable
-        TEST(iter2)
-        auto arg = get_next(iter2);
-        if (arg) { // first arg is empty
-          bin = h(get_coords(iter2,arg));
-        } else throw error(PyExc_ValueError,
-          "empty iterable passed as first argument to histogram.fill()");
-      } else if (arg) { // first arg not iterable
-        TEST(arg)
-        PyErr_Clear();
-        bin = h(get_coords(iter,arg));
-      } else {
-        TEST(__FUNCTION__)
-        throw error(PyExc_ValueError,
-        "empty iterable passed to histogram.fill()");
+      while (arg) {
+        if (i==n) throw error(PyExc_ValueError,
+          "too many indices passed to histogram[]");
+        ii[i] = unpy_check<index_type>(arg);
+        arg = get_next(iter);
+        ++i;
       }
+      if (i!=n) throw error(PyExc_ValueError,
+        "too few indices passed to histogram[]");
+      bin = h[ii];
     } else { // single arg
       PyErr_Clear();
-      TEST(__FUNCTION__)
-      bin = h(unpy_check<double>(args));
+      bin = h[unpy_check<index_type>(args)];
     }
-    */
 
-    // TODO: wrap python iterables as c++ containers to use map()
-
-    // TODO: multiple indices
     Py_INCREF(bin);
     return bin;
   }
