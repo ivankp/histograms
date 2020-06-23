@@ -116,6 +116,26 @@ void unpy(T& x, PyObject* p) noexcept { x = unpy<T>(p); }
 template <typename T>
 void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
 
+class py_tmp {
+protected:
+  PyObject* p;
+public:
+  explicit py_tmp(PyObject* p) noexcept: p(p) { }
+  ~py_tmp() { Py_DECREF(p); }
+
+  py_tmp(const py_tmp&) = delete;
+  py_tmp& operator=(const py_tmp&) = delete;
+  py_tmp(py_tmp&&) = delete;
+  py_tmp& operator=(py_tmp&&) = delete;
+
+  operator PyObject*() const noexcept { return p; }
+
+  PyObject* operator->() noexcept { return p; }
+  const PyObject* operator->() const noexcept { return p; }
+  PyObject& operator*() noexcept { return *p; }
+  const PyObject& operator*() const noexcept { return *p; }
+};
+
 class py_ptr {
 protected:
   PyObject* p = nullptr;

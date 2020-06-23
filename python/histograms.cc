@@ -194,7 +194,7 @@ struct py_bin_filler {
     } throw existing_error{};
   }
   static PyObject* fill(py_ptr& bin) {
-    return fill(bin,py<int>(1));
+    return fill(bin,py_tmp(py<int>(1)));
   }
 };
 
@@ -260,18 +260,18 @@ struct py_hist {
       }
     } else {
       for (auto& bin : h.bins())
-        bin = py_ptr(py<double>(0.));
+        bin = py_ptr(py<edge_type>(0.));
     }
   }
 
-  std::vector<double> get_coords(auto&& iter, auto&& arg) {
+  std::vector<edge_type> get_coords(auto&& iter, auto&& arg) {
     const unsigned n = h.naxes();
     unsigned i = 0;
-    std::vector<double> coords(n);
+    std::vector<edge_type> coords(n);
     while (arg) {
       if (i==n) throw error(PyExc_ValueError,
         "too many coordinates passed to histogram.fill()");
-      coords[i] = unpy_check<double>(arg);
+      coords[i] = unpy_check<edge_type>(arg);
       arg = get_next(iter);
       ++i;
     }
@@ -292,7 +292,7 @@ struct py_hist {
       const unsigned nargs = tuple_size(args) - 1;
       PyObject* fill_args;
       if (nargs==0) {
-        fill_args = py<double>(1.);
+        fill_args = py<edge_type>(1.);
       } else {
         auto arr1 = tuple_items(args);
         if (nargs==1) {
@@ -405,11 +405,10 @@ struct hist_py_type: PyTypeObject {
     tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
       // TODO: more direct way to construct iterator?
-      PyObject* args = PyTuple_New(1);
+      py_tmp args(PyTuple_New(1));
       Py_INCREF(tuple_items(args)[0] = self);
       PyObject* iter = PyObject_CallObject(
         reinterpret_cast<PyObject*>(&hist_iter_py_type), args );
-      Py_DECREF(args);
       return iter;
     };
   }
