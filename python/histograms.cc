@@ -231,10 +231,10 @@ struct py_hist {
       if (!arg) throw error(PyExc_TypeError,
         "empty list of histogram arguments");
       for (;;) { // loop over arguments
-        TEST(unpy<std::string_view>(Py_TYPE(arg)->tp_str(arg)))
         PyObject* ax = call_with_iterable(
           reinterpret_cast<PyObject*>(&axis_py_type), arg);
         if (!ax) throw existing_error{};
+        TEST(unpy<std::string_view>(Py_TYPE(ax)->tp_str(ax)))
         axes.emplace_back(ax);
 
         arg = get_next(iter);
@@ -353,30 +353,7 @@ struct py_hist_iter {
   : py_hist_iter( reinterpret_cast<py_hist*>(PyTuple_GET_ITEM(args,0))->h )
   { }
 
-  py_hist_iter(py_hist::hist& h) noexcept: it(h.begin()), end(h.end()) {
-    TEST(this)
-    TEST(h[0])
-    TEST(&(this->it))
-    TEST(*this->it)
-    TEST(Py_TYPE(h[0])->tp_name)
-    TEST(reinterpret_cast<PyFloatObject*>(&*h[0])->ob_fval)
-  }
-
-  // py_hist_iter(const py_hist_iter&) = default;
-  // py_hist_iter(py_hist_iter&&) = default;
-  //
-  // py_hist_iter& operator=(const py_hist_iter&) = default;
-  // py_hist_iter& operator=(py_hist_iter&&) = default;
-
-  // py_hist_iter(PyObject* args, PyObject* kwargs) {
-  //   TEST(args)
-  //   auto hist = PyTuple_GET_ITEM(args,0);
-  //   TEST(hist)
-  //   auto& h = reinterpret_cast<py_hist*>(PyTuple_GET_ITEM(args,0))->h;
-  //
-  //   it = h.begin();
-  //   end = h.end();
-  // }
+  py_hist_iter(py_hist::hist& h) noexcept: it(h.begin()), end(h.end()) { }
 };
 
 struct hist_iter_py_type: PyTypeObject {
@@ -387,20 +364,11 @@ struct hist_iter_py_type: PyTypeObject {
     tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_hist_iter>;
     tp_iternext = (::iternextfunc) +[](py_hist_iter* self) noexcept
       -> PyObject* {
-        TEST(self)
-        TEST(Py_TYPE(self)->tp_name)
-        TEST(&(self->it))
-        TEST(*self->it)
-        return nullptr;
         auto& it = self->it;
         if (it == self->end) return nullptr;
         PyObject* bin = *it;
-        TEST(bin)
         ++it;
         Py_INCREF(bin);
-        TEST(__FUNCTION__)
-        TEST( Py_TYPE(bin)->tp_name )
-        TEST( reinterpret_cast<PyFloatObject*>(bin)->ob_fval )
         return bin;
       };
   }
@@ -438,16 +406,11 @@ struct hist_py_type: PyTypeObject {
     tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
       // TODO: more direct way to construct iterator?
-      TEST(__FUNCTION__)
       PyObject* args = PyTuple_New(1);
-      reinterpret_cast<PyTupleObject*>(args)->ob_item[0] = self;
-      TEST(__FUNCTION__)
+      Py_INCREF(reinterpret_cast<PyTupleObject*>(args)->ob_item[0] = self);
       PyObject* iter = PyObject_CallObject(
         reinterpret_cast<PyObject*>(&hist_iter_py_type), args );
       Py_DECREF(args);
-      TEST(__FUNCTION__)
-      TEST(reinterpret_cast<py_hist_iter*>(iter))
-      TEST(*reinterpret_cast<py_hist_iter*>(iter)->it)
       return iter;
     };
   }

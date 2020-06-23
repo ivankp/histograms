@@ -68,7 +68,7 @@ print(h([1.5,4],'x','y','z'))
 print(h[1,3])
 print(h[13])
 
-h2 = histogram((10,0,1))
-for b in h2:
+h2 = histogram(((10,0,1),))
+for b in enumerate(h2):
     print(b)
 

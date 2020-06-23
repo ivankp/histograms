@@ -169,8 +169,9 @@ PyObject* call_with_iterable(PyObject* callable, PyObject* args) noexcept {
 
 template <typename T>
 void tp_dealloc(T* self) noexcept {
+  auto tp = Py_TYPE(self);
   self->~T();
-  Py_TYPE(self)->tp_free(self);
+  tp->tp_free(self);
 }
 
 template <typename T>
