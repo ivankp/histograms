@@ -2,6 +2,7 @@
 #define IVANP_PYTHON_CPP_HH
 
 #include <stdexcept>
+#include <string_view>
 #include <type_traits>
 #include <ivanp/concepts.hh>
 
@@ -105,7 +106,7 @@ T unpy_check(PyObject* p) {
     }
   } else
   if constexpr (stringlike<T>) {
-    if (PyUnicode_READY(p)!=0)
+    if (!PyUnicode_Check(p) || PyUnicode_READY(p)!=0)
       throw error(PyExc_ValueError,"could not read python object as a string");
     return unpy<T>(p);
   }
@@ -175,11 +176,14 @@ public:
 py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
 py_ptr get_next(PyObject* iter) { return py_ptr(PyIter_Next(iter)); }
 
-PyObject* call_with_iterable(PyObject* callable, PyObject* args) noexcept {
+PyObject* call_with_iterable(PyObject* callable, PyObject* args) {
   // https://stackoverflow.com/q/61131975/2640636
   // https://docs.python.org/3/c-api/sequence.html#c.PySequence_Tuple
   const bool convert = args && !PyTuple_Check(args);
-  if (convert) args = PySequence_Tuple(args);
+  if (convert) {
+    args = PySequence_Tuple(args);
+    if (!args) throw existing_error{};
+  }
   // https://docs.python.org/3/c-api/object.html#c.PyObject_CallObject
   PyObject* obj = PyObject_CallObject(callable,args);
   if (convert) Py_DECREF(args);
@@ -191,6 +195,13 @@ PyObject** tuple_items(PyObject* tup) noexcept {
 }
 auto tuple_size(PyObject* tup) noexcept {
   return reinterpret_cast<PyVarObject*>(tup)->ob_size;
+}
+
+auto type_name(PyObject* x) noexcept {
+  return Py_TYPE(x)->tp_name;
+}
+auto as_str(PyObject* x) noexcept {
+  return unpy<std::string_view>(Py_TYPE(x)->tp_str(x));
 }
 
 // Type methods =====================================================

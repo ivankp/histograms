@@ -3,9 +3,6 @@
 #include <string_view>
 #include <sstream>
 
-#include <ivanp/hist/histograms.hh>
-#include <python.hh>
-
 #define STR1(x) #x
 #define STR(x) STR1(x)
 
@@ -17,6 +14,9 @@
 #else
 #define TEST(var)
 #endif
+
+#include <ivanp/hist/histograms.hh>
+#include <python.hh>
 
 using namespace std::string_literals;
 
@@ -46,9 +46,7 @@ struct py_axis {
     index_type nbins = 0;
     edge_type min, max;
 
-    auto iter = get_iter(args);
-    if (!iter) throw existing_error{};
-
+    auto iter = get_iter(args); // guaranteed tuple
     auto arg = get_next(iter);
     if (!arg) throw error(PyExc_TypeError,
       "empty list of axis arguments");
@@ -221,19 +219,20 @@ struct py_hist {
   hist h;
 
   py_hist(PyObject* args, PyObject* kwargs)
-  : h([](PyObject* args) { // args is a guaranteed tuple
+  : h([](PyObject* args) {
       hist::axes_type axes;
       axes.reserve(tuple_size(args));
 
-      auto iter = get_iter(args);
+      auto iter = get_iter(args); // guaranteed tuple
       auto arg = get_next(iter);
       if (!arg) throw error(PyExc_TypeError,
         "empty list of histogram arguments");
+
       for (;;) { // loop over arguments
         PyObject* ax = call_with_iterable(
           reinterpret_cast<PyObject*>(&axis_py_type), arg);
         if (!ax) throw existing_error{};
-        TEST(unpy<std::string_view>(Py_TYPE(ax)->tp_str(ax)))
+        TEST(as_str(ax))
         axes.emplace_back(ax);
 
         arg = get_next(iter);
