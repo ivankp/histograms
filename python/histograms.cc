@@ -221,12 +221,11 @@ struct py_hist {
   hist h;
 
   py_hist(PyObject* args, PyObject* kwargs)
-  : h([](PyObject* args) {
+  : h([](PyObject* args) { // args is a guaranteed tuple
       hist::axes_type axes;
+      axes.reserve(tuple_size(args));
 
       auto iter = get_iter(args);
-      if (!iter) throw existing_error{};
-
       auto arg = get_next(iter);
       if (!arg) throw error(PyExc_TypeError,
         "empty list of histogram arguments");
@@ -247,9 +246,6 @@ struct py_hist {
     PyObject* bintype = nullptr;
     if (kwargs) {
       bintype = PyDict_GetItemString(kwargs,"bintype");
-      TEST(bintype->ob_type->tp_name)
-      TEST(reinterpret_cast<PyTypeObject*>(bintype)->tp_name)
-      TEST(PyType_Check(bintype))
       if (bintype && !PyType_Check(bintype)) throw error(PyExc_TypeError,
         "histogram bintype argument must be a type");
     }
@@ -258,9 +254,9 @@ struct py_hist {
         bin = py_ptr(PyObject_CallObject(bintype,nullptr));
         if (!bin) throw existing_error{};
       }
-    } else {
+    } else { // default to float-valued bins
       for (auto& bin : h.bins())
-        bin = py_ptr(py<edge_type>(0.));
+        bin = py_ptr(py<double>(0.));
     }
   }
 
@@ -406,6 +402,7 @@ struct hist_py_type: PyTypeObject {
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
       // TODO: more direct way to construct iterator?
       py_tmp args(PyTuple_New(1));
+      // https://stackoverflow.com/q/62527730/2640636
       Py_INCREF(tuple_items(args)[0] = self);
       PyObject* iter = PyObject_CallObject(
         reinterpret_cast<PyObject*>(&hist_iter_py_type), args );

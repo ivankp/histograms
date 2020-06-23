@@ -123,6 +123,7 @@ public:
   explicit py_tmp(PyObject* p) noexcept: p(p) { }
   ~py_tmp() { Py_DECREF(p); }
 
+  py_tmp() = delete;
   py_tmp(const py_tmp&) = delete;
   py_tmp& operator=(const py_tmp&) = delete;
   py_tmp(py_tmp&&) = delete;
