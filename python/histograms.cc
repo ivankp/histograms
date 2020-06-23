@@ -289,18 +289,17 @@ struct py_hist {
         "no arguments passed to histogram.fill()");
     } else if (auto iter2 = get_iter(arg)) { // first arg is iterable
       const auto coords = get_coords(iter2,get_next(iter2));
-      const unsigned nargs = PyTuple_GET_SIZE(args) - 1;
+      const unsigned nargs = tuple_size(args) - 1;
       PyObject* fill_args;
       if (nargs==0) {
         fill_args = py<double>(1.);
       } else {
-        auto arr1 = reinterpret_cast<PyTupleObject*>(args)->ob_item;
+        auto arr1 = tuple_items(args);
         if (nargs==1) {
           fill_args = arr1[1];
         } else {
           fill_args = PyTuple_New(nargs);
-          std::copy(arr1+1, arr1+1+nargs,
-            reinterpret_cast<PyTupleObject*>(fill_args)->ob_item);
+          std::copy(arr1+1, arr1+1+nargs, tuple_items(fill_args));
         }
       }
       bin = h(coords,fill_args);
@@ -350,7 +349,7 @@ struct py_hist_iter {
   decltype(std::declval<py_hist::hist&>().end  ()) end;
 
   py_hist_iter(PyObject* args, PyObject* kwargs) noexcept
-  : py_hist_iter( reinterpret_cast<py_hist*>(PyTuple_GET_ITEM(args,0))->h )
+  : py_hist_iter( reinterpret_cast<py_hist*>( tuple_items(args)[0] )->h )
   { }
 
   py_hist_iter(py_hist::hist& h) noexcept: it(h.begin()), end(h.end()) { }
@@ -407,7 +406,7 @@ struct hist_py_type: PyTypeObject {
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
       // TODO: more direct way to construct iterator?
       PyObject* args = PyTuple_New(1);
-      Py_INCREF(reinterpret_cast<PyTupleObject*>(args)->ob_item[0] = self);
+      Py_INCREF(tuple_items(args)[0] = self);
       PyObject* iter = PyObject_CallObject(
         reinterpret_cast<PyObject*>(&hist_iter_py_type), args );
       Py_DECREF(args);

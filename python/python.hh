@@ -165,6 +165,13 @@ PyObject* call_with_iterable(PyObject* callable, PyObject* args) noexcept {
   return obj;
 }
 
+PyObject** tuple_items(PyObject* tup) noexcept {
+  return reinterpret_cast<PyTupleObject*>(tup)->ob_item;
+}
+auto tuple_size(PyObject* tup) noexcept {
+  return reinterpret_cast<PyVarObject*>(tup)->ob_size;
+}
+
 // Type methods =====================================================
 
 template <typename T>
