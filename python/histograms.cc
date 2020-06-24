@@ -1,5 +1,4 @@
 #include <memory>
-#include <algorithm>
 #include <string_view>
 #include <sstream>
 
@@ -27,7 +26,7 @@ using namespace ivanp::python;
 using edge_type = double;
 
 struct py_axis {
-  PyObject_HEAD
+  PyObject_HEAD // must not be overwritten in the constructor
 
   using base_type = poly_axis_base<edge_type>;
   using uniform_axis_type = uniform_axis<edge_type,true>;
@@ -285,20 +284,17 @@ struct py_hist {
     } else if (auto iter2 = get_iter(arg)) { // first arg is iterable
       const auto coords = get_coords(iter2,get_next(iter2));
       const unsigned nargs = tuple_size(args) - 1;
-      PyObject* fill_args;
       if (nargs==0) {
-        fill_args = py<edge_type>(1.);
+        bin = h(coords);
       } else {
         auto arr1 = tuple_items(args);
         if (nargs==1) {
-          fill_args = arr1[1];
+          bin = h(coords,arr1[1]);
         } else {
-          fill_args = PyTuple_New(nargs);
-          std::copy(arr1+1, arr1+1+nargs, tuple_items(fill_args));
+          dynamic_py_tuple fill_args(arr1+1, arr1+1+nargs);
+          bin = h(coords,*fill_args);
         }
       }
-      bin = h(coords,fill_args);
-      if (nargs!=1) Py_DECREF(fill_args);
     } else { // first arg not iterable
       PyErr_Clear();
       bin = h(get_coords(iter,arg));
@@ -399,12 +395,9 @@ struct hist_py_type: PyTypeObject {
     tp_methods = hist_methods;
     tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
-      // TODO: more direct way to construct iterator?
-      py_tmp args(PyTuple_New(1));
-      // https://stackoverflow.com/q/62527730/2640636
-      Py_INCREF(tuple_items(args)[0] = self);
+      static_py_tuple args(self);
       PyObject* iter = PyObject_CallObject(
-        reinterpret_cast<PyObject*>(&hist_iter_py_type), args );
+        reinterpret_cast<PyObject*>(&hist_iter_py_type), *args);
       return iter;
     };
   }

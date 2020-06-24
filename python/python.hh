@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
+#include <algorithm>
 #include <ivanp/concepts.hh>
 
 #define PY_SSIZE_T_CLEAN
@@ -190,6 +191,13 @@ PyObject* call_with_iterable(PyObject* callable, PyObject* args) {
   return obj;
 }
 
+auto type_name(PyObject* x) noexcept {
+  return Py_TYPE(x)->tp_name;
+}
+auto as_str(PyObject* x) noexcept {
+  return unpy<std::string_view>(Py_TYPE(x)->tp_str(x));
+}
+
 PyObject** tuple_items(PyObject* tup) noexcept {
   return reinterpret_cast<PyTupleObject*>(tup)->ob_item;
 }
@@ -197,12 +205,47 @@ auto tuple_size(PyObject* tup) noexcept {
   return reinterpret_cast<PyVarObject*>(tup)->ob_size;
 }
 
-auto type_name(PyObject* x) noexcept {
-  return Py_TYPE(x)->tp_name;
-}
-auto as_str(PyObject* x) noexcept {
-  return unpy<std::string_view>(Py_TYPE(x)->tp_str(x));
-}
+// PyTupleObject make_static_tuple(PyObject* x) noexcept {
+//   return { PyVarObject_HEAD_INIT(&PyTuple_Type,1) { x } };
+// }
+
+template <size_t N>
+struct static_py_tuple {
+  static constexpr size_t tuple_size = sizeof(PyTupleObject);
+  static constexpr size_t   ptr_size = sizeof(PyObject*);
+
+  alignas(PyTupleObject)
+  char buff[tuple_size + (N>1 ? N-1 : 0)*ptr_size];
+
+  static_py_tuple(auto*... xs) requires (sizeof...(xs)==N) {
+    new (reinterpret_cast<PyTupleObject*>(buff)) PyTupleObject
+      { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
+    new (reinterpret_cast<PyObject*>(buff+tuple_size-ptr_size)) (PyObject*[N])
+      { reinterpret_cast<PyObject*>(xs)... };
+  }
+
+  PyObject* operator*() noexcept { return reinterpret_cast<PyObject*>(buff); }
+};
+template <typename... T>
+static_py_tuple(T*... xs) -> static_py_tuple<sizeof...(T)>;
+
+struct dynamic_py_tuple {
+  static constexpr size_t tuple_size = sizeof(PyTupleObject);
+  static constexpr size_t   ptr_size = sizeof(PyObject*);
+
+  char* buff;
+
+  dynamic_py_tuple(PyObject** a, PyObject** b)
+  : buff([n=b-a]{ return new char[tuple_size + (n>1 ? n-1 : 0)*ptr_size]; }())
+  {
+    new (reinterpret_cast<PyTupleObject*>(buff)) PyTupleObject
+      { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
+    std::copy(a, b, reinterpret_cast<PyObject**>(buff+tuple_size-ptr_size));
+  }
+  ~dynamic_py_tuple() { delete[] buff; }
+
+  PyObject* operator*() noexcept { return reinterpret_cast<PyObject*>(buff); }
+};
 
 // Type methods =====================================================
 
@@ -217,6 +260,7 @@ template <typename T>
 PyObject* tp_new(PyTypeObject* subtype, PyObject* args, PyObject* kwargs)
 noexcept {
   PyObject* obj = subtype->tp_alloc(subtype,0);
+  // tp_alloc sets ob_base (PyObject_HEAD macro)
   if constexpr (std::is_nothrow_constructible_v<T,PyObject*,PyObject*>) {
     new(reinterpret_cast<T*>(obj)) T(args,kwargs);
     return obj;
