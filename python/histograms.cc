@@ -258,48 +258,51 @@ struct py_hist {
     }
   }
 
-  std::vector<edge_type> get_coords(auto&& iter, auto&& arg) {
-    const unsigned n = h.naxes();
-    unsigned i = 0;
-    std::vector<edge_type> coords(n);
-    while (arg) {
-      if (i==n) throw error(PyExc_ValueError,
-        "too many coordinates passed to histogram.fill()");
-      coords[i] = unpy_check<edge_type>(arg);
-      arg = get_next(iter);
-      ++i;
-    }
-    if (i!=n) throw error(PyExc_ValueError,
-      "too few coordinates passed to histogram.fill()");
-    return coords;
-  }
-
   PyObject* operator()(PyObject* args, PyObject* kwargs) {
     auto iter = get_iter(args); // guaranteed tuple
-    PyObject* bin;
     auto arg = get_next(iter);
-    if (!arg) { // no arguments
-      throw error(PyExc_ValueError,
-        "no arguments passed to histogram.fill()");
-    } else if (auto iter2 = get_iter(arg)) { // first arg is iterable
-      const auto coords = get_coords(iter2,get_next(iter2));
+    if (!arg) throw error(PyExc_ValueError, // no arguments
+      "no arguments passed to histogram.fill()");
+
+    PyObject* fill_arg;
+    bool need_decref = true;
+    if (auto iter2 = get_iter(arg)) { // first arg is iterable
+      iter = iter2;
+      arg = get_next(iter);
       const unsigned nargs = tuple_size(args) - 1;
       if (nargs==0) {
-        bin = h(coords);
+        fill_arg = py<int>(1.);
       } else {
         auto arr1 = tuple_items(args);
         if (nargs==1) {
-          bin = h(coords,arr1[1]);
+          fill_arg = arr1[1];
+          need_decref = false;
         } else {
-          bin = h(coords,*dynamic_py_tuple(arr1+1, arr1+1+nargs));
+          fill_arg = PyTuple_New(nargs);
+          std::copy(arr1+1, arr1+1+nargs, tuple_items(fill_arg));
         }
       }
     } else { // first arg not iterable
       PyErr_Clear();
-      bin = h(get_coords(iter,arg));
+      fill_arg = py<int>(1.);
     }
 
+    PyObject* bin = h([&]{
+        const unsigned n = h.naxes();
+        std::vector<edge_type> coords(n);
+        unsigned i = 0;
+        for (; arg; ++i) {
+          if (i==n) throw error(PyExc_ValueError,
+            "too many coordinates passed to histogram.fill()");
+          coords[i] = unpy_check<edge_type>(arg);
+          arg = get_next(iter);
+        }
+        if (i!=n) throw error(PyExc_ValueError,
+          "too few coordinates passed to histogram.fill()");
+        return coords;
+      }(), fill_arg);
     Py_INCREF(bin);
+    if (need_decref) Py_DECREF(fill_arg);
     return bin;
   }
 

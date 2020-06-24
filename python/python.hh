@@ -118,6 +118,13 @@ void unpy(T& x, PyObject* p) noexcept { x = unpy<T>(p); }
 template <typename T>
 void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
 
+auto type_name(PyObject* x) noexcept {
+  return Py_TYPE(x)->tp_name;
+}
+auto as_str(PyObject* x) noexcept {
+  return unpy<std::string_view>(Py_TYPE(x)->tp_str(x));
+}
+
 class py_tmp {
 protected:
   PyObject* p;
@@ -174,6 +181,8 @@ public:
   const PyObject& operator*() const noexcept { return *p; }
 };
 
+// Iteration ========================================================
+
 py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
 py_ptr get_next(PyObject* iter) { return py_ptr(PyIter_Next(iter)); }
 
@@ -191,12 +200,7 @@ PyObject* call_with_iterable(PyObject* callable, PyObject* args) {
   return obj;
 }
 
-auto type_name(PyObject* x) noexcept {
-  return Py_TYPE(x)->tp_name;
-}
-auto as_str(PyObject* x) noexcept {
-  return unpy<std::string_view>(Py_TYPE(x)->tp_str(x));
-}
+// Tuples ===========================================================
 
 PyObject** tuple_items(PyObject* tup) noexcept {
   return reinterpret_cast<PyTupleObject*>(tup)->ob_item;
