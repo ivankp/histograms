@@ -205,10 +205,6 @@ auto tuple_size(PyObject* tup) noexcept {
   return reinterpret_cast<PyVarObject*>(tup)->ob_size;
 }
 
-// PyTupleObject make_static_tuple(PyObject* x) noexcept {
-//   return { PyVarObject_HEAD_INIT(&PyTuple_Type,1) { x } };
-// }
-
 template <size_t N>
 struct static_py_tuple {
   static constexpr size_t tuple_size = sizeof(PyTupleObject);
@@ -217,11 +213,13 @@ struct static_py_tuple {
   alignas(PyTupleObject)
   char buff[tuple_size + (N>1 ? N-1 : 0)*ptr_size];
 
-  static_py_tuple(auto*... xs) requires (sizeof...(xs)==N) {
-    new (reinterpret_cast<PyTupleObject*>(buff)) PyTupleObject
-      { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
-    new (reinterpret_cast<PyObject*>(buff+tuple_size-ptr_size)) (PyObject*[N])
-      { reinterpret_cast<PyObject*>(xs)... };
+  PyTupleObject& tup() noexcept {
+    return *reinterpret_cast<PyTupleObject*>(buff);
+  }
+
+  static_py_tuple(auto*... xs) noexcept requires (sizeof...(xs)==N) {
+    new (&tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
+    new (tup().ob_item) (PyObject*[N]) { reinterpret_cast<PyObject*>(xs)... };
   }
 
   PyObject* operator*() noexcept { return reinterpret_cast<PyObject*>(buff); }
@@ -235,12 +233,15 @@ struct dynamic_py_tuple {
 
   char* buff;
 
-  dynamic_py_tuple(PyObject** a, PyObject** b)
+  PyTupleObject& tup() noexcept {
+    return *reinterpret_cast<PyTupleObject*>(buff);
+  }
+
+  dynamic_py_tuple(auto a, auto b) noexcept
   : buff([n=b-a]{ return new char[tuple_size + (n>1 ? n-1 : 0)*ptr_size]; }())
   {
-    new (reinterpret_cast<PyTupleObject*>(buff)) PyTupleObject
-      { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
-    std::copy(a, b, reinterpret_cast<PyObject**>(buff+tuple_size-ptr_size));
+    new (&tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
+    std::copy(a, b, tup().ob_item);
   }
   ~dynamic_py_tuple() { delete[] buff; }
 

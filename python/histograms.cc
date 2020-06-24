@@ -291,8 +291,7 @@ struct py_hist {
         if (nargs==1) {
           bin = h(coords,arr1[1]);
         } else {
-          dynamic_py_tuple fill_args(arr1+1, arr1+1+nargs);
-          bin = h(coords,*fill_args);
+          bin = h(coords,*dynamic_py_tuple(arr1+1, arr1+1+nargs));
         }
       }
     } else { // first arg not iterable
@@ -395,10 +394,10 @@ struct hist_py_type: PyTypeObject {
     tp_methods = hist_methods;
     tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
-      static_py_tuple args(self);
-      PyObject* iter = PyObject_CallObject(
-        reinterpret_cast<PyObject*>(&hist_iter_py_type), *args);
-      return iter;
+      return PyObject_CallObject(
+        reinterpret_cast<PyObject*>(&hist_iter_py_type),
+        *static_py_tuple(self)
+      );
     };
   }
 } hist_py_type;
