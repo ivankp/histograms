@@ -136,6 +136,16 @@ public:
   : _axes(std::move(axes)) { resize_bins(); }
 
   const axes_type& axes() const noexcept { return _axes; }
+  template <size_t I>
+  const auto& axis() const noexcept { return std::get<I>(axes); }
+  const auto& axis(index_type i) const noexcept { return detail::at(axes,i); }
+  auto naxes() const noexcept {
+    if constexpr (map::Tuple<axes_type>)
+      return std::tuple_size<axes_type>::value;
+    else
+      return std::size(_axes);
+  }
+
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
   auto size() const noexcept {
@@ -143,12 +153,6 @@ public:
       return std::tuple_size<bins_container_type>::value;
     else
       return std::size(_bins);
-  }
-  auto naxes() const noexcept {
-    if constexpr (map::Tuple<axes_type>)
-      return std::tuple_size<axes_type>::value;
-    else
-      return std::size(_axes);
   }
 
   auto begin() const noexcept { return _bins.begin(); }

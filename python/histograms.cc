@@ -146,11 +146,9 @@ PyMethodDef axis_methods[] {
   { "nbins", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
       return py((*self)->nbins());
     }, METH_NOARGS, "number of bins on the axis not counting overflow" },
-
   { "nedges", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
       return py((*self)->nedges());
     }, METH_NOARGS, "number of edges on the axis" },
-
   { "find_bin_index", (PyCFunction) +[](
       py_axis* self, PyObject* const* args, Py_ssize_t nargs
     ) noexcept -> PyObject* {
@@ -163,6 +161,11 @@ PyMethodDef axis_methods[] {
         return nullptr;
       }
     }, METH_FASTCALL, "" },
+  // edge
+  // min
+  // max
+  // lower
+  // upper
   { }
 };
 
@@ -364,9 +367,6 @@ struct hist_iter_py_type: PyTypeObject {
 } hist_iter_py_type;
 
 PyMethodDef hist_methods[] {
-  { "size", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
-      return py(self->h.size());
-    }, METH_NOARGS, "total number of histogram bins, including overflow" },
   { "fill", (PyCFunction) ivanp::python::tp_call<py_hist>,
     METH_VARARGS, "fill histogram bin at given coordinates" },
   { "axes", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
@@ -375,7 +375,7 @@ PyMethodDef hist_methods[] {
       std::copy(axes.begin(), axes.end(), tuple_items(tup));
       for (PyObject* x : axes) Py_INCREF(x);
       return tup;
-    }, METH_NOARGS, "tuple of histogram axes" },
+    }, METH_NOARGS, "tuple of axes" },
   { "axis", (PyCFunction) +[](py_hist* self, PyObject* arg) noexcept
     -> PyObject* {
       try {
@@ -385,7 +385,18 @@ PyMethodDef hist_methods[] {
         Py_INCREF(axis);
         return axis;
       } catch(...) { lipp(); return nullptr; }
-    }, METH_O, "histogram axis at given index" },
+    }, METH_O, "axis at given index" },
+  { "naxes", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+      return py(self->h.naxes());
+    }, METH_NOARGS, "number of axes" },
+  { "size", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+      return py(self->h.size());
+    }, METH_NOARGS, "total number of bins, including overflow" },
+  // join_index
+  // bin_at
+  // find_bin_index
+  // find_bin
+  // fill_at
   { }
 };
 
