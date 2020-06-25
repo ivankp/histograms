@@ -17,6 +17,7 @@
 #include <python.hh>
 
 using namespace std::string_literals;
+using ivanp::python::py_cast;
 
 namespace ivanp::hist {
 namespace {
@@ -31,14 +32,13 @@ struct py_axis {
   using uniform_axis_type = uniform_axis<edge_type,true>;
   using list_axis_type = list_axis<std::vector<edge_type>,true>;
 
-  alignas(std::max(alignof(uniform_axis_type),alignof(list_axis_type)))
-  char buff[std::max(sizeof(uniform_axis_type),sizeof(list_axis_type))];
+  std::aligned_union_t<0,uniform_axis_type,list_axis_type> buff;
 
   base_type& operator*() noexcept {
-    return *reinterpret_cast<base_type*>(buff);
+    return *reinterpret_cast<base_type*>(&buff);
   }
   const base_type& operator*() const noexcept {
-    return *reinterpret_cast<const base_type*>(buff);
+    return *reinterpret_cast<const base_type*>(&buff);
   }
   base_type* operator->() noexcept { return &**this; }
   const base_type* operator->() const noexcept { return &**this; }
@@ -200,14 +200,12 @@ struct py_hist {
   struct axis_ptr: py_ptr {
     using py_ptr::py_ptr;
     const py_axis::base_type& operator*() const noexcept {
-      return **reinterpret_cast<py_axis*>(p);
+      return **py_cast<py_axis>(p);
     }
     const py_axis::base_type* operator->() const noexcept {
       return &**this;
     }
   };
-  // TODO: reduce indirection
-  // maybe construct py_hist subtypes for some inbuilt bin types
 
   using hist = histogram<
     py_ptr,
@@ -228,7 +226,7 @@ struct py_hist {
 
       for (;;) { // loop over arguments
         PyObject* ax = call_with_iterable(
-          reinterpret_cast<PyObject*>(&axis_py_type), arg);
+          py_cast<PyObject>(&axis_py_type), arg);
         if (!ax) throw existing_error{};
         TEST(as_str(ax))
         axes.emplace_back(ax);
@@ -341,7 +339,7 @@ struct py_hist_iter {
   decltype(std::declval<py_hist::hist&>().end  ()) end;
 
   py_hist_iter(PyObject* args, PyObject* kwargs) noexcept
-  : py_hist_iter( reinterpret_cast<py_hist*>( tuple_items(args)[0] )->h )
+  : py_hist_iter( py_cast<py_hist>( tuple_items(args)[0] )->h )
   { }
 
   py_hist_iter(py_hist::hist& h) noexcept: it(h.begin()), end(h.end()) { }
@@ -422,7 +420,7 @@ struct hist_py_type: PyTypeObject {
     tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
       return PyObject_CallObject(
-        reinterpret_cast<PyObject*>(&hist_iter_py_type),
+        py_cast<PyObject>(&hist_iter_py_type),
         *static_py_tuple(self)
       );
     };
@@ -474,7 +472,7 @@ PyMODINIT_FUNC PyInit_histograms() {
   for (auto [type, name] : py_types) {
     Py_INCREF(type);
     ++n;
-    if (PyModule_AddObject(m, name, reinterpret_cast<PyObject*>(type)) < 0) {
+    if (PyModule_AddObject(m, name, py_cast<PyObject>(type)) < 0) {
       do {
         Py_DECREF(py_types[--n].type);
       } while (n);

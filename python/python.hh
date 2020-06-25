@@ -39,10 +39,28 @@ void lipp() noexcept { // Lippincott function
 }
 
 template <typename T>
-concept stringlike = requires (T& x) {
-  { x.data() } -> convertible_to<const char*>;
-  { x.size() } -> convertible_to<size_t>;
+concept has_ob_base =
+  requires(T& x) { x.ob_base; } && (offsetof(T,ob_base) == 0);
+
+template <typename T, typename Base>
+struct upcast_trait: std::false_type { };
+template <typename T>
+struct upcast_trait<T,T>: std::true_type { };
+template <has_ob_base T, typename Base>
+struct upcast_trait<T,Base> {
+  using ob_base_t = decltype(std::declval<T&>().ob_base);
+  static constexpr bool value =
+    std::is_same_v<ob_base_t,Base> ||
+    upcast_trait<ob_base_t,Base>::value;
 };
+
+template <typename From, typename To>
+concept can_upcast = upcast_trait<From,To>::value;
+template <typename A, typename B>
+concept can_cast = can_upcast<A,B> || can_upcast<B,A>;
+
+template <typename To, can_cast<To> From>
+To* py_cast(From* p) noexcept { return reinterpret_cast<To*>(p); }
 
 template <typename T>
 [[nodiscard]] PyObject* py(const T& x) noexcept {
@@ -67,7 +85,7 @@ template <typename T>
 }
 
 template <typename T>
-T unpy(PyObject* p) noexcept {
+[[nodiscard]] T unpy(PyObject* p) noexcept {
   if constexpr (std::is_floating_point_v<T>) {
     return PyFloat_AsDouble(p);
   } else
@@ -95,7 +113,7 @@ T unpy(PyObject* p) noexcept {
 }
 
 template <typename T>
-T unpy_check(PyObject* p) {
+[[nodiscard]] T unpy_check(PyObject* p) {
   if constexpr (std::is_arithmetic_v<T>) {
     if constexpr (std::is_same_v<T,bool>) {
       const auto x = PyObject_IsTrue(p);
@@ -204,10 +222,10 @@ PyObject* call_with_iterable(PyObject* callable, PyObject* args) {
 // Tuples ===========================================================
 
 PyObject** tuple_items(PyObject* tup) noexcept {
-  return reinterpret_cast<PyTupleObject*>(tup)->ob_item;
+  return py_cast<PyTupleObject>(tup)->ob_item;
 }
 auto tuple_size(PyObject* tup) noexcept {
-  return reinterpret_cast<PyVarObject*>(tup)->ob_size;
+  return py_cast<PyVarObject>(tup)->ob_size;
 }
 
 template <size_t N>
@@ -218,16 +236,16 @@ struct static_py_tuple {
   alignas(PyTupleObject)
   char buff[tuple_size + (N>1 ? N-1 : 0)*ptr_size];
 
-  PyTupleObject& tup() noexcept {
-    return *reinterpret_cast<PyTupleObject*>(buff);
+  PyTupleObject* tup() noexcept {
+    return reinterpret_cast<PyTupleObject*>(buff);
   }
 
   static_py_tuple(auto*... xs) noexcept requires (sizeof...(xs)==N) {
-    new (&tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
-    new (tup().ob_item) (PyObject*[N]) { reinterpret_cast<PyObject*>(xs)... };
+    new (tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
+    new (tup()->ob_item) (PyObject*[N]) { py_cast<PyObject>(xs)... };
   }
 
-  PyObject* operator*() noexcept { return reinterpret_cast<PyObject*>(buff); }
+  PyObject* operator*() noexcept { return py_cast<PyObject>(tup()); }
 };
 template <typename... T>
 static_py_tuple(T*... xs) -> static_py_tuple<sizeof...(T)>;
@@ -238,19 +256,19 @@ struct dynamic_py_tuple {
 
   char* buff;
 
-  PyTupleObject& tup() noexcept {
-    return *reinterpret_cast<PyTupleObject*>(buff);
+  PyTupleObject* tup() noexcept {
+    return reinterpret_cast<PyTupleObject*>(buff);
   }
 
   dynamic_py_tuple(auto a, auto b) noexcept
   : buff([n=b-a]{ return new char[tuple_size + (n>1 ? n-1 : 0)*ptr_size]; }())
   {
-    new (&tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
-    std::copy(a, b, tup().ob_item);
+    new (tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
+    std::copy(a, b, tup()->ob_item);
   }
   ~dynamic_py_tuple() { delete[] buff; }
 
-  PyObject* operator*() noexcept { return reinterpret_cast<PyObject*>(buff); }
+  PyObject* operator*() noexcept { return py_cast<PyObject>(tup()); }
 };
 
 // Type methods =====================================================
@@ -268,11 +286,11 @@ noexcept {
   PyObject* obj = subtype->tp_alloc(subtype,0);
   // tp_alloc sets ob_base (PyObject_HEAD macro)
   if constexpr (std::is_nothrow_constructible_v<T,PyObject*,PyObject*>) {
-    new(reinterpret_cast<T*>(obj)) T(args,kwargs);
+    new(py_cast<T>(obj)) T(args,kwargs);
     return obj;
   } else {
     try {
-      new(reinterpret_cast<T*>(obj)) T(args,kwargs);
+      new(py_cast<T>(obj)) T(args,kwargs);
       return obj;
     } catch (...) { lipp(); return nullptr; }
   }
