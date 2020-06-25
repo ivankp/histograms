@@ -145,22 +145,16 @@ struct py_axis {
 PyMethodDef axis_methods[] {
   { "nbins", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
       return py((*self)->nbins());
-    }, METH_NOARGS, "number of bins on the axis not counting overflow" },
+    }, METH_NOARGS, "number of axis bins not counting overflow" },
   { "nedges", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
       return py((*self)->nedges());
-    }, METH_NOARGS, "number of edges on the axis" },
-  { "find_bin_index", (PyCFunction) +[](
-      py_axis* self, PyObject* const* args, Py_ssize_t nargs
-    ) noexcept -> PyObject* {
+    }, METH_NOARGS, "number of axis edges" },
+  { "find_bin_index", (PyCFunction) +[](py_axis* self, PyObject* arg) noexcept
+    -> PyObject* {
       try {
-        if (nargs!=1) throw error(PyExc_TypeError,
-          "axis.find_bin_index(x) takes exactly one argument");
-        return py((*self)->find_bin_index(unpy_check<edge_type>(args[0])));
-      } catch (...) {
-        lipp();
-        return nullptr;
-      }
-    }, METH_FASTCALL, "" },
+        return py((*self)->find_bin_index(unpy_check<edge_type>(arg)));
+      } catch (...) { lipp(); return nullptr; }
+    }, METH_O, "find bin by coordinate" },
   // edge
   // min
   // max
