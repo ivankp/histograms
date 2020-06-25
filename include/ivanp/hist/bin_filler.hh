@@ -1,8 +1,8 @@
 #ifndef IVANP_HISTOGRAMS_BIN_FILLER_HH
 #define IVANP_HISTOGRAMS_BIN_FILLER_HH
 
+#include <type_traits>
 #include <functional>
-#include <ivanp/traits.hh>
 
 namespace ivanp::hist {
 
@@ -44,7 +44,7 @@ struct bin_filler {
 
   template <typename Bin, typename T1, typename... TT>
   requires ( sizeof...(TT) || !can_increment_by<Bin,T1&&>)
-        && can_invoke<Bin,T1&&,TT&&...>
+        && can_invoke<Bin&,T1&&,TT&&...>
   static decltype(auto) fill(Bin& bin, T1&& x1, TT&&... xs)
   noexcept(std::is_nothrow_invocable_v<Bin&,T1&&,TT&&...>)
   { return std::invoke(bin, std::forward<T1>(x1), std::forward<TT>(xs)...); }
