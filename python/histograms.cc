@@ -37,7 +37,7 @@ struct py_axis {
   [[noreturn]] static void uniform_args_error() {
     throw error(PyExc_ValueError,
       "uniform axis arguments must be of the form"
-      " [nbins,min,max] or [nbins,min,max,\"log\"]");
+      " [nbins,min,max] or [nbins,min,max,\"flags\"]");
   }
 
   py_axis(PyObject* args, PyObject* kwargs) {
@@ -183,15 +183,12 @@ struct axis_py_type: PyTypeObject {
 // end axis defs ====================================================
 
 struct py_bin_filler {
-  static PyObject* fill(py_ptr& bin, PyObject* args) {
-    PyObject* sum = PyNumber_InPlaceAdd(bin,args);
+  static PyObject* fill(py_ptr& bin, PyObject* arg) {
+    PyObject* sum = PyNumber_InPlaceAdd(bin,arg);
     if (sum) [[likely]] {
       if (sum != bin) bin = py_ptr(sum);
       return bin;
     } throw existing_error{};
-  }
-  static PyObject* fill(py_ptr& bin) {
-    return fill(bin,py_tmp(py<int>(1)));
   }
 };
 
@@ -372,6 +369,23 @@ PyMethodDef hist_methods[] {
     }, METH_NOARGS, "total number of histogram bins, including overflow" },
   { "fill", (PyCFunction) ivanp::python::tp_call<py_hist>,
     METH_VARARGS, "fill histogram bin at given coordinates" },
+  { "axes", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+      const auto& axes = self->h.axes();
+      PyObject* tup = PyTuple_New(axes.size());
+      std::copy(axes.begin(), axes.end(), tuple_items(tup));
+      for (PyObject* x : axes) Py_INCREF(x);
+      return tup;
+    }, METH_NOARGS, "tuple of histogram axes" },
+  { "axis", (PyCFunction) +[](py_hist* self, PyObject* arg) noexcept
+    -> PyObject* {
+      try {
+        const auto i = unpy_check<int>(arg);
+        const auto& axes = self->h.axes();
+        PyObject* axis = axes.at(i<0 ? axes.size()+i : i);
+        Py_INCREF(axis);
+        return axis;
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_O, "histogram axis at given index" },
   { }
 };
 

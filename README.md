@@ -61,12 +61,12 @@ an axis with the given bin edges.
 an axis with 10 internal bins, i.e. 11 edges, between 0 and 1.
 
 Optional subsequent elements provide extra specifications.
-For example, a logarithmically binned axis can be specified with `"logy"`.
+For example, a logarithmically binned axis can be specified with `"log"`.
 ```JSON
-[ [ 1e-10, 1e5, 15, "logy" ] ]
+[ [ 1e-10, 1e5, 15, "log" ] ]
 ```
 
 The two formats can be combined, e.g.
 ```JSON
-[ [ 0, 1, 10 ], 50, [ 100, 1000, 9, "logy" ] ]
+[ [ 0, 1, 10 ], 50, [ 100, 1000, 9, "log" ] ]
 ```
