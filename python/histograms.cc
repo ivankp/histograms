@@ -1,4 +1,3 @@
-#include <memory>
 #include <string_view>
 #include <sstream>
 
@@ -32,7 +31,17 @@ struct py_axis {
   using uniform_axis_type = uniform_axis<edge_type,true>;
   using list_axis_type = list_axis<std::vector<edge_type>,true>;
 
-  std::unique_ptr<base_type> axis;
+  alignas(std::max(alignof(uniform_axis_type),alignof(list_axis_type)))
+  char buff[std::max(sizeof(uniform_axis_type),sizeof(list_axis_type))];
+
+  base_type& operator*() noexcept {
+    return *reinterpret_cast<base_type*>(buff);
+  }
+  const base_type& operator*() const noexcept {
+    return *reinterpret_cast<const base_type*>(buff);
+  }
+  base_type* operator->() noexcept { return &**this; }
+  const base_type* operator->() const noexcept { return &**this; }
 
   [[noreturn]] static void uniform_args_error() {
     throw error(PyExc_ValueError,
@@ -95,18 +104,15 @@ struct py_axis {
 
     // make the axis
     if (edges.empty()) {
-      axis = std::make_unique<uniform_axis_type>(nbins, min, max);
+      new (&**this) uniform_axis_type(nbins, min, max);
     } else {
       std::sort( begin(edges), end(edges) );
       edges.erase( std::unique( begin(edges), end(edges) ), end(edges) );
-      axis = std::make_unique<list_axis_type>(std::move(edges));
+      new (&**this) list_axis_type(std::move(edges));
     }
   }
 
-  base_type* operator->() { return axis.get(); }
-  const base_type* operator->() const { return axis.get(); }
-  base_type& operator*() { return *axis; }
-  const base_type& operator*() const { return *axis; }
+  ~py_axis() { (*this)->~base_type(); }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) {
     auto iter = get_iter(args);
@@ -116,19 +122,18 @@ struct py_axis {
     if (!arg || get_next(iter)) throw error(PyExc_TypeError,
       "axis call expression takes exactly one argument");
 
-    return py(axis->find_bin_index(unpy_check<edge_type>(arg)));
+    return py((*this)->find_bin_index(unpy_check<edge_type>(arg)));
   }
 
-  PyObject* str() noexcept {
+  PyObject* str() const noexcept {
     std::stringstream ss;
-    const auto* ptr = &**this;
-    if (const auto* axis = dynamic_cast< const uniform_axis_type* >(ptr)) {
+    if (auto* axis = dynamic_cast< const uniform_axis_type* >(&**this)) {
       ss << "axis: { nbins: " << axis->nbins()
                  << ", min: " << axis->min()
                  << ", max: " << axis->max()
                  << " }";
     } else
-    if (const auto* axis = dynamic_cast< const list_axis_type* >(ptr)) {
+    if (auto* axis = dynamic_cast< const list_axis_type* >(&**this)) {
       ss << "axis: [ ";
       bool first = true;
       for (auto x : axis->edges()) {

@@ -5,6 +5,7 @@
 #include <string_view>
 #include <type_traits>
 #include <algorithm>
+#include <new>
 #include <ivanp/concepts.hh>
 
 #define PY_SSIZE_T_CLEAN
