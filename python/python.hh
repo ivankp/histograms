@@ -175,13 +175,13 @@ public:
     // should not increment reference count here
     // because it is usually already incremented by python
   }
-  py_ptr(const py_ptr& o): p(o.p) {
+  py_ptr(const py_ptr& o) noexcept: p(o.p) {
     Py_XINCREF(p);
   }
-  py_ptr& operator=(const py_ptr& o) {
-    Py_XINCREF(o.p);
+  py_ptr& operator=(const py_ptr& o) noexcept {
     Py_XDECREF(p);
     p = o.p;
+    Py_XINCREF(p);
     return *this;
   }
   py_ptr(py_ptr&& o) noexcept {
@@ -203,8 +203,12 @@ public:
 
 // Iteration ========================================================
 
-py_ptr get_iter(PyObject* obj) { return py_ptr(PyObject_GetIter(obj)); }
-py_ptr get_next(PyObject* iter) { return py_ptr(PyIter_Next(iter)); }
+py_ptr get_iter(PyObject* obj) noexcept {
+  return py_ptr(PyObject_GetIter(obj));
+}
+py_ptr get_next(PyObject* iter) noexcept {
+  return py_ptr(PyIter_Next(iter));
+}
 
 PyObject* call_with_iterable(PyObject* callable, PyObject* args) {
   // https://stackoverflow.com/q/61131975/2640636

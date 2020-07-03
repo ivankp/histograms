@@ -215,15 +215,14 @@ struct py_hist {
   hist h;
 
   py_hist(PyObject* args, PyObject* kwargs)
-  : h([](PyObject* args) {
+  : h([](PyObject* args) { // guaranteed tuple
       hist::axes_type axes;
-      axes.reserve(tuple_size(args));
+      if (const auto nargs = tuple_size(args))
+        axes.reserve(nargs);
+      else throw error(PyExc_TypeError, "empty list of histogram arguments");
 
-      auto iter = get_iter(args); // guaranteed tuple
+      auto iter = get_iter(args);
       auto arg = get_next(iter);
-      if (!arg) throw error(PyExc_TypeError,
-        "empty list of histogram arguments");
-
       for (;;) { // loop over arguments
         PyObject* ax = call_with_iterable(
           py_cast<PyObject>(&axis_py_type), arg);
