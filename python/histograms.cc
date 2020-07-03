@@ -14,6 +14,7 @@
 #endif
 
 #include <ivanp/hist/histograms.hh>
+#include <ivanp/hist/bins.hh>
 #include <python.hh>
 
 using namespace std::string_literals;

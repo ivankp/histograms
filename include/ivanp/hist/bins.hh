@@ -2,6 +2,7 @@
 #define IVANP_HISTOGRAMS_BINS_HH
 
 #include <ivanp/map/map.hh>
+#include <cmath>
 
 namespace ivanp::hist {
 
@@ -15,12 +16,14 @@ struct ww2_bin {
     ++w2;
     return *this;
   }
-  ww2_bin& operator+=(const auto& weight) noexcept(noexcept(w += weight)) {
+  ww2_bin& operator+=(const auto& weight)
+  noexcept(noexcept(w += weight)) {
     w  += weight;
     w2 += weight*weight;
     return *this;
   }
-  ww2_bin& operator+=(const ww2_bin& o) noexcept(noexcept(w += o.w)) {
+  ww2_bin& operator+=(const ww2_bin<auto>& o)
+  noexcept(noexcept(w += o.w)) {
     w  += o.w;
     w2 += o.w2;
     return *this;
@@ -71,10 +74,11 @@ struct stat_bin {
   }
 
   template <unsigned I>
-  double moment() const noexcept { return std::get<I>(m); }
-  template <>
-  double moment<2>() const noexcept {
-    return (n > 1) ? n*m[2]/((n-1)*m[0]) : 0.;
+  double moment() const noexcept {
+    if constexpr (I==2)
+      return (n > 1) ? n*m[2]/((n-1)*m[0]) : 0.;
+    else
+      return std::get<I>(m);
   }
 
   double total    () const noexcept { return moment<0>(); }
@@ -90,6 +94,7 @@ template <typename Bin, typename Count = long unsigned>
 struct counted_bin {
   using bin_type = Bin;
   using count_type = Count;
+  using weight_type = typename bin_type::weight_type;
 
   bin_type bin;
   count_type n;
@@ -106,15 +111,13 @@ struct counted_bin {
     ++n;
     return *this;
   }
-  counted_bin& operator+=(const counted_bin& o)
+  counted_bin& operator+=(const counted_bin<auto,auto>& o)
   noexcept(noexcept(bin += o.bin)) {
     bin += o.bin;
     n   += o.n;
     return *this;
   }
 };
-
-using mc_bin = counted_bin<ww2_bin<>>;
 
 template <
   typename Bin,
@@ -128,42 +131,37 @@ struct static_weight_bin {
   bin_type bin;
   static weight_type weight;
 
+  static_weight_bin& operator+=(const auto& weight)
+  noexcept(noexcept(bin += weight)) {
+    bin += weight;
+    return *this;
+  }
   static_weight_bin operator++()
   noexcept(noexcept(bin += weight)) {
-    bin += weight;
-    return *this;
+    return *this += weight;
   }
-  counted_bin& operator+=(const auto& weight)
-  noexcept(noexcept(bin += weight)) {
-    bin += weight;
-    return *this;
-  }
-  static_weight_bin& operator+=(const static_weight_bin& o)
+  static_weight_bin& operator+=(const static_weight_bin<auto,auto,auto>& o)
   noexcept(noexcept(bin += o.bin)) {
     return *this += o.bin;
   }
 };
 
-template <typename Weights>
-struct multiweight_bin {
-  using weights_container_type = Weights;
-
-  weights_container_type weights;
+template <typename T>
+struct multi_bin {
+  T xs;
   // TODO: how to call a non-default constructor?
   // maybe specialize static_weight_bin<multiweight_bin<std::vector<...>>,...>
 
-  multiweight_bin& operator++() {
-    ivanp::map::map([](auto& w){ ++w; }, weights);
+  multi_bin& operator++() noexcept {
+    ivanp::map::map([](auto& x){ ++x; }, xs);
     return *this;
   }
-  multiweight_bin& operator+=(const auto& arg) {
-    ivanp::map::map([](auto& w, auto& a){ w += a; }, weights, arg);
+  multi_bin& operator+=(const auto& arg) noexcept {
+    ivanp::map::map([](auto& x, auto& a){ x += a; }, xs, arg);
     return *this;
   }
-  template <typename T>
-  multiweight_bin& operator+=(const multiweight_bin<T>& o)
-  noexcept(noexcept(bin += o.bin)) {
-    return *this += o.weights;
+  multi_bin& operator+=(const multi_bin<auto>& o) noexcept {
+    return *this += o.xs;
   }
 };
 
@@ -204,7 +202,7 @@ struct nlo_bin {
     wsum = 0;
     return *this;
   }
-  nlo_bin& operator+=(const nlo_bin& o) noexcept {
+  nlo_bin& operator+=(const nlo_bin<auto,auto>& o) noexcept {
     if (wsum!=0) finalize();
     if (o.wsum!=0) bin += o.wsum;
     bin += o.bin;
@@ -213,14 +211,19 @@ struct nlo_bin {
   }
 };
 
+// ==================================================================
+
+using mc_bin = counted_bin<ww2_bin<double>>;
+
 using nlo_mc_bin = nlo_bin<mc_bin>;
+
 using nlo_mc_multibin =
   nlo_bin<
     counted_bin< static_weight_bin<
-      multiweight_bin< std::vector<ww2_bin<double>> >,
-      multiweight_bin< std::vector<double> >
+      multi_bin< std::vector<ww2_bin<double>> >,
+      multi_bin< std::vector<double> >
     > >,
-    multiweight_bin< std::vector<double> >
+    multi_bin< std::vector<double> >
   >;
 
 } // end namespace ivanp::hist
