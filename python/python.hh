@@ -55,7 +55,8 @@ struct upcast_trait<T,Base> {
 };
 
 template <typename From, typename To>
-concept can_upcast = upcast_trait<From,To>::value;
+concept can_upcast = upcast_trait<
+  std::remove_cv_t<From>, std::remove_cv_t<To> >::value;
 template <typename A, typename B>
 concept can_cast = can_upcast<A,B> || can_upcast<B,A>;
 

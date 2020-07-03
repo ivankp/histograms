@@ -114,7 +114,7 @@ struct py_axis {
 
   ~py_axis() { (*this)->~base_type(); }
 
-  PyObject* operator()(PyObject* args, PyObject* kwargs) {
+  PyObject* operator()(PyObject* args, PyObject* kwargs) const {
     auto iter = get_iter(args);
     if (!iter) throw existing_error{};
 
