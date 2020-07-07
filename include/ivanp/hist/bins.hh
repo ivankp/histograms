@@ -94,7 +94,7 @@ template <typename Bin, typename Count = long unsigned>
 struct counted_bin {
   using bin_type = Bin;
   using count_type = Count;
-  using weight_type = typename bin_type::weight_type;
+  using weight_type = typename bin_type::weight_type; // might need to default
 
   bin_type bin;
   count_type n;
@@ -129,7 +129,17 @@ struct static_weight_bin {
   using weight_type = Weight;
 
   bin_type bin;
-  static weight_type weight;
+  inline static weight_type weight = []() -> weight_type {
+    if constexpr (std::is_arithmetic_v<weight_type>) return 1;
+    else return { };
+  }();
+
+  static_weight_bin() = default;
+  static_weight_bin() requires requires {
+    bin->resize(weight->size());
+  } {
+    bin->resize(weight->size());
+  }
 
   static_weight_bin& operator+=(const auto& weight)
   noexcept(noexcept(bin += weight)) {
@@ -149,8 +159,6 @@ struct static_weight_bin {
 template <typename T>
 struct multi_bin {
   T xs;
-  // TODO: how to call a non-default constructor?
-  // maybe specialize static_weight_bin<multiweight_bin<std::vector<...>>,...>
 
   multi_bin& operator++() noexcept {
     ivanp::map::map([](auto& x){ ++x; }, xs);
@@ -163,6 +171,11 @@ struct multi_bin {
   multi_bin& operator+=(const multi_bin<auto>& o) noexcept {
     return *this += o.xs;
   }
+
+  T operator->() noexcept { return &xs; }
+  const T operator->() const noexcept { return &xs; }
+  T& operator*() noexcept { return xs; }
+  const T& operator*() const noexcept { return xs; }
 };
 
 template <typename Bin, typename Weight = typename Bin::weight_type>
@@ -171,7 +184,7 @@ struct nlo_bin {
   using weight_type = Weight;
 
   bin_type bin;
-  weight_type wsum { };
+  weight_type wsum;
   long unsigned nent = 0;
   static long unsigned id, prev_id;
 
@@ -213,7 +226,7 @@ struct nlo_bin {
 
 // ==================================================================
 
-using mc_bin = counted_bin<ww2_bin<double>>;
+using mc_bin = counted_bin< static_weight_bin< ww2_bin<double> > >;
 
 using nlo_mc_bin = nlo_bin<mc_bin>;
 

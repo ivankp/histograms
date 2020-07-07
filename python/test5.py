@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-from histograms import histogram
+from histograms import histogram, mc_bin
 
-for T in (float,int):
+for T in (float,int,mc_bin):
     print(T.__name__)
     h = histogram(((10,0,1),),bintype=T)
 

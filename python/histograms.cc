@@ -20,6 +20,8 @@
 using namespace std::string_literals;
 using ivanp::python::py_cast;
 
+// TODO: python copy constructor
+
 namespace ivanp::hist {
 namespace {
 using namespace ivanp::python;
@@ -260,7 +262,7 @@ struct py_hist {
     if (!arg) throw error(PyExc_ValueError, // no arguments
       "no arguments passed to histogram.fill()");
 
-    PyObject* fill_arg = nullptr;
+    PyObject* fill_arg;
     bool need_decref = false;
     if (auto iter2 = get_iter(arg)) { // first arg is iterable
       iter = iter2;
@@ -332,7 +334,7 @@ struct py_hist {
 // TODO: implement fast call (since python 3.7)
 
 struct py_hist_iter {
-  PyObject_HEAD
+  PyObject_HEAD // must not be overwritten in the constructor
 
   decltype(std::declval<py_hist::hist&>().begin()) it;
   decltype(std::declval<py_hist::hist&>().end  ()) end;
@@ -428,6 +430,54 @@ struct hist_py_type: PyTypeObject {
 
 // end hist defs ====================================================
 
+struct py_mc_bin {
+  PyObject_HEAD // must not be overwritten in the constructor
+
+  mc_bin bin;
+
+  py_mc_bin(PyObject* args, PyObject* kwargs) noexcept { }
+
+  PyObject* str() const noexcept {
+    std::stringstream ss;
+    ss << "{ w: " << bin.bin.bin.w
+       << ", w2: " << bin.bin.bin.w2
+       << ", n: " << bin.n
+       << " }";
+    return py(std::move(ss).str());
+  }
+}; // end py_mc_bin -------------------------------------------------
+
+struct mc_bin_nb_methods: PyNumberMethods {
+  mc_bin_nb_methods(): PyNumberMethods{ } {
+    nb_inplace_add = (::binaryfunc) +[](py_mc_bin* self, PyObject* args)
+    noexcept {
+      // TODO: use static weight
+      // TODO: _PyLong_One is not safe to use as a sentinel
+      if (args == _PyLong_One) ++self->bin;
+      else self->bin += unpy_check<double>(args);
+      Py_INCREF(self);
+      return self;
+    };
+  }
+} mc_bin_nb_methods;
+
+// TODO: add member access
+
+struct mc_bin_py_type: PyTypeObject {
+  mc_bin_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+    tp_name = "histograms.mc_bin";
+    tp_basicsize = sizeof(py_mc_bin);
+    tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_mc_bin>;
+    tp_str = (::reprfunc) ivanp::python::tp_str<py_mc_bin>;
+    tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    tp_doc = "MC bin object";
+    tp_new = (::newfunc) ivanp::python::tp_new<py_mc_bin>;
+    tp_as_number = &mc_bin_nb_methods;
+  }
+} mc_bin_py_type;
+
+// end bin defs =====================================================
+
 /*
 PyMethodDef methods[] {
   { "histogram", make, METH_VARARGS | METH_KEYWORDS,
@@ -449,7 +499,7 @@ struct py_module: PyModuleDef {
 // https://stackoverflow.com/q/62464225/2640636
 
 } // end anonymous namespace
-} // end histograms namespace
+} // end ivanp::hist namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
   struct {
@@ -458,7 +508,8 @@ PyMODINIT_FUNC PyInit_histograms() {
   } static constexpr py_types[] {
     { &ivanp::hist::axis_py_type, "axis" },
     { &ivanp::hist::hist_py_type, "histogram" },
-    { &ivanp::hist::hist_iter_py_type, "histogram_iterator" }
+    { &ivanp::hist::hist_iter_py_type, "histogram_iterator" },
+    { &ivanp::hist::mc_bin_py_type, "mc_bin" }
   };
 
   for (auto [type, name] : py_types)
@@ -482,4 +533,3 @@ PyMODINIT_FUNC PyInit_histograms() {
 
   return m;
 }
-
