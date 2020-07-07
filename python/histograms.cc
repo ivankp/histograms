@@ -28,6 +28,8 @@ using namespace ivanp::python;
 
 using edge_type = double;
 
+static PyObject* sentinel_one;
+
 struct py_axis {
   PyObject_HEAD // must not be overwritten in the constructor
 
@@ -269,7 +271,7 @@ struct py_hist {
       arg = get_next(iter);
       const unsigned nargs = tuple_size(args) - 1;
       if (nargs==0) {
-        fill_arg = _PyLong_One;
+        fill_arg = sentinel_one;
       } else {
         auto arr1 = tuple_items(args);
         if (nargs==1) {
@@ -282,7 +284,7 @@ struct py_hist {
       }
     } else { // first arg not iterable
       PyErr_Clear();
-      fill_arg = _PyLong_One;
+      fill_arg = sentinel_one;
     }
 
     PyObject* bin = h([&]{
@@ -449,12 +451,10 @@ struct py_mc_bin {
 
 struct mc_bin_nb_methods: PyNumberMethods {
   mc_bin_nb_methods(): PyNumberMethods{ } {
-    nb_inplace_add = (::binaryfunc) +[](py_mc_bin* self, PyObject* args)
+    nb_inplace_add = (::binaryfunc) +[](py_mc_bin* self, PyObject* arg)
     noexcept {
-      // TODO: use static weight
-      // TODO: _PyLong_One is not safe to use as a sentinel
-      if (args == _PyLong_One) ++self->bin;
-      else self->bin += unpy_check<double>(args);
+      if (arg == sentinel_one) ++self->bin;
+      else self->bin += unpy_check<double>(arg);
       Py_INCREF(self);
       return self;
     };
@@ -462,6 +462,7 @@ struct mc_bin_nb_methods: PyNumberMethods {
 } mc_bin_nb_methods;
 
 // TODO: add member access
+// TODO: allow static weight to be set
 
 struct mc_bin_py_type: PyTypeObject {
   mc_bin_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
@@ -502,6 +503,9 @@ struct py_module: PyModuleDef {
 } // end ivanp::hist namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
+  ivanp::hist::sentinel_one = PyLong_FromLong(1);
+  if (!ivanp::hist::sentinel_one) return nullptr;
+
   struct {
     PyTypeObject* type;
     const char* name;
