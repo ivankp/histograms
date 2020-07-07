@@ -188,10 +188,9 @@ struct axis_py_type: PyTypeObject {
 struct py_bin_filler {
   static PyObject* fill(py_ptr& bin, PyObject* arg) {
     PyObject* sum = PyNumber_InPlaceAdd(bin,arg);
-    if (sum) [[likely]] {
-      if (sum != bin) bin = py_ptr(sum);
-      return bin;
-    } throw existing_error{};
+    if (!sum) [[unlikely]] throw existing_error{};
+    if (sum != bin) bin = py_ptr(sum);
+    return bin;
   }
 };
 
@@ -261,27 +260,27 @@ struct py_hist {
     if (!arg) throw error(PyExc_ValueError, // no arguments
       "no arguments passed to histogram.fill()");
 
-    PyObject* fill_arg;
-    bool need_decref = true;
+    PyObject* fill_arg = nullptr;
+    bool need_decref = false;
     if (auto iter2 = get_iter(arg)) { // first arg is iterable
       iter = iter2;
       arg = get_next(iter);
       const unsigned nargs = tuple_size(args) - 1;
       if (nargs==0) {
-        fill_arg = py<int>(1.);
+        fill_arg = _PyLong_One;
       } else {
         auto arr1 = tuple_items(args);
         if (nargs==1) {
           fill_arg = arr1[1];
-          need_decref = false;
         } else {
           fill_arg = PyTuple_New(nargs);
           std::copy(arr1+1, arr1+1+nargs, tuple_items(fill_arg));
+          need_decref = true;
         }
       }
     } else { // first arg not iterable
       PyErr_Clear();
-      fill_arg = py<int>(1.);
+      fill_arg = _PyLong_One;
     }
 
     PyObject* bin = h([&]{
