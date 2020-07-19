@@ -16,3 +16,7 @@ print(h.axis(-1))
 print(h.axis(-2))
 
 print(h.axis(0).find_bin_index(15.1))
+
+# h2 = histogram(h)
+# h3 = h.copy()
+# h4 = h.deepcopy()

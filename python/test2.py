@@ -32,9 +32,17 @@ print(c)
 print(a)
 print(b)
 
+print(h.size())
+
 print(h([1.5,4],'x','y','z'))
 print(h[1,3])
 print(h[13])
+print(h.axis(0).find_bin_index(1.5))
+print(h.axis(1).find_bin_index(4))
+print(h.join_index(1,3))
+print(h.join_index(1,4))
+print(h.join_index(2,3))
+# print(h.join_index(45))
 
 h2 = histogram(((10,0,1),))
 h2(0.55)

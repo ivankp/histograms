@@ -21,6 +21,7 @@ using namespace std::string_literals;
 using ivanp::python::py_cast;
 
 // TODO: python copy constructor
+// https://stackoverflow.com/q/62976099/2640636
 
 namespace ivanp::hist {
 namespace {
@@ -153,10 +154,10 @@ struct py_axis {
 }; // end py_axis ---------------------------------------------------
 
 PyMethodDef axis_methods[] {
-  { "nbins", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
+  { "nbins", (PyCFunction) +[](py_axis* self) noexcept {
       return py((*self)->nbins());
     }, METH_NOARGS, "number of axis bins not counting overflow" },
-  { "nedges", (PyCFunction) +[](py_axis* self, PyObject*) noexcept {
+  { "nedges", (PyCFunction) +[](py_axis* self) noexcept {
       return py((*self)->nedges());
     }, METH_NOARGS, "number of axis edges" },
   { "find_bin_index", (PyCFunction) +[](py_axis* self, PyObject* arg) noexcept
@@ -165,11 +166,32 @@ PyMethodDef axis_methods[] {
         return py((*self)->find_bin_index(unpy_check<edge_type>(arg)));
       } catch (...) { lipp(); return nullptr; }
     }, METH_O, "find bin by coordinate" },
-  // edge
-  // min
-  // max
-  // lower
-  // upper
+  { "edge", (PyCFunction) +[](py_axis* self, PyObject* arg) noexcept
+    -> PyObject* {
+      try {
+        return py((*self)->edge(unpy_check<index_type>(arg)));
+      } catch (...) { lipp(); return nullptr; }
+    }, METH_O, "edge at index" },
+  { "min", (PyCFunction) +[](py_axis* self) noexcept
+    -> PyObject* {
+      return py((*self)->min());
+    }, METH_NOARGS, "axis minimum" },
+  { "max", (PyCFunction) +[](py_axis* self) noexcept
+    -> PyObject* {
+      return py((*self)->max());
+    }, METH_NOARGS, "axis maximum" },
+  { "lower", (PyCFunction) +[](py_axis* self, PyObject* arg) noexcept
+    -> PyObject* {
+      try {
+        return py((*self)->lower(unpy_check<index_type>(arg)));
+      } catch (...) { lipp(); return nullptr; }
+    }, METH_O, "lower bin edge" },
+  { "upper", (PyCFunction) +[](py_axis* self, PyObject* arg) noexcept
+    -> PyObject* {
+      try {
+        return py((*self)->upper(unpy_check<index_type>(arg)));
+      } catch (...) { lipp(); return nullptr; }
+    }, METH_O, "upper bin edge" },
   { }
 };
 
@@ -315,13 +337,13 @@ struct py_hist {
       auto arg = get_next(iter);
       while (arg) {
         if (i==n) throw error(PyExc_ValueError,
-          "too many indices passed to histogram[]");
+          "too many argument indices");
         ii[i] = unpy_check<index_type>(arg);
         arg = get_next(iter);
         ++i;
       }
       if (i!=n) throw error(PyExc_ValueError,
-        "too few indices passed to histogram[]");
+        "too few argument indices");
       bin = h[ii];
     } else { // single arg
       PyErr_Clear();
@@ -369,7 +391,7 @@ struct hist_iter_py_type: PyTypeObject {
 PyMethodDef hist_methods[] {
   { "fill", (PyCFunction) ivanp::python::tp_call<py_hist>,
     METH_VARARGS, "fill histogram bin at given coordinates" },
-  { "axes", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+  { "axes", (PyCFunction) +[](py_hist* self) noexcept {
       const auto& axes = self->h.axes();
       PyObject* tup = PyTuple_New(axes.size());
       std::copy(axes.begin(), axes.end(), tuple_items(tup));
@@ -386,13 +408,35 @@ PyMethodDef hist_methods[] {
         return axis;
       } catch(...) { lipp(); return nullptr; }
     }, METH_O, "axis at given index" },
-  { "naxes", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+  { "naxes", (PyCFunction) +[](py_hist* self) noexcept {
       return py(self->h.naxes());
     }, METH_NOARGS, "number of axes" },
-  { "size", (PyCFunction) +[](py_hist* self, PyObject*) noexcept {
+  { "size", (PyCFunction) +[](py_hist* self) noexcept {
       return py(self->h.size());
     }, METH_NOARGS, "total number of bins, including overflow" },
-  // join_index
+  { "join_index", (PyCFunction) +[](py_hist* self, PyObject* args) noexcept
+    -> PyObject* {
+      try {
+        auto& h = self->h;
+        auto iter = get_iter(args);
+        const unsigned n = h.naxes();
+        unsigned i = 0;
+        std::vector<index_type> ii(n);
+        auto arg = get_next(iter);
+        while (arg) {
+          if (i==n) throw error(PyExc_ValueError,
+            "too many argument indices");
+          ii[i] = unpy_check<index_type>(arg);
+          arg = get_next(iter);
+          ++i;
+        }
+        // if (i==1) return py(h.join_index(ii[0]));
+        // else
+        if (i!=n) throw error(PyExc_ValueError,
+          "too few argument indices");
+        return py(h.join_index(ii));
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_VARARGS, "axis at given index" },
   // bin_at
   // find_bin_index
   // find_bin
