@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <new>
+#include <span>
 #include <ivanp/concepts.hh>
 
 #define PY_SSIZE_T_CLEAN
@@ -142,9 +143,9 @@ template <typename T>
 }
 
 template <typename T>
-void unpy(T& x, PyObject* p) noexcept { x = unpy<T>(p); }
+void unpy_to(T& x, PyObject* p) noexcept { x = unpy<T>(p); }
 template <typename T>
-void unpy_check(T& x, PyObject* p) { x = unpy_check<T>(p); }
+void unpy_check_to(T& x, PyObject* p) { x = unpy_check<T>(p); }
 
 auto type_name(PyObject* x) noexcept {
   return Py_TYPE(x)->tp_name;
@@ -242,6 +243,19 @@ PyObject** tuple_items(PyObject* tup) noexcept {
 auto tuple_size(PyObject* tup) noexcept {
   return py_cast<PyVarObject>(tup)->ob_size;
 }
+std::span<PyObject*> tuple_span(PyObject* tup) noexcept {
+  return { tuple_items(tup), (size_t)tuple_size(tup) };
+}
+
+PyObject** list_items(PyObject* list) noexcept {
+  return py_cast<PyListObject>(list)->ob_item;
+}
+auto list_size(PyObject* list) noexcept {
+  return py_cast<PyVarObject>(list)->ob_size;
+}
+std::span<PyObject*> list_span(PyObject* list) noexcept {
+  return { list_items(list), (size_t)list_size(list) };
+}
 
 template <size_t N>
 struct static_py_tuple {
@@ -285,6 +299,35 @@ struct dynamic_py_tuple {
 
   PyObject* operator*() noexcept { return py_cast<PyObject>(tup()); }
 };
+
+template <typename F>
+auto map_py_args(PyObject* args_tuple, F&& f, size_t n=0) {
+  std::vector<
+    std::remove_reference_t<decltype(f(std::declval<PyObject*>()))>
+  > xs;
+  auto args = tuple_span(args_tuple);
+  if (args.size() == 1) {
+    if (args[0]->ob_type == &PyTuple_Type) {
+      args = tuple_span(args[0]);
+    } else if (args[0]->ob_type == &PyList_Type) {
+      args = list_span(args[0]);
+    } else if (auto iter = get_iter(args[0])) {
+      if (n) xs.reserve(n);
+      auto arg = get_next(iter);
+      while (arg) {
+        xs.push_back(f(arg));
+        arg = get_next(iter);
+      }
+      return xs;
+    } else {
+      PyErr_Clear();
+    }
+  }
+  xs.reserve(args.size());
+  for (PyObject* arg : args)
+    xs.push_back(f(arg));
+  return xs;
+}
 
 // Type methods =====================================================
 

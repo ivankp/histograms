@@ -18,6 +18,7 @@
 #include <python.hh>
 
 using namespace std::string_literals;
+using namespace ivanp::map::operators;
 
 // TODO: python copy constructor
 // https://stackoverflow.com/q/62976099/2640636
@@ -69,15 +70,15 @@ struct py_axis {
 
         auto subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_check(nbins,subarg);
+        unpy_check_to(nbins,subarg);
 
         subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_check(min,subarg);
+        unpy_check_to(min,subarg);
 
         subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_check(max,subarg);
+        unpy_check_to(max,subarg);
 
         subarg = get_next(subiter);
         if (subarg) { // flags
@@ -286,7 +287,7 @@ struct py_hist {
         },h,h_arg->h);
       } else { // default to float-valued bins
         for (auto& bin : h)
-          bin = py_ptr(double_zero);
+          Py_INCREF((bin = py_ptr(double_zero)));
       }
     }
   }
@@ -428,29 +429,35 @@ PyMethodDef hist_methods[] {
   { "join_index", (PyCFunction) +[](py_hist* self, PyObject* args) noexcept
     -> PyObject* {
       try {
-        auto& h = self->h;
-        auto iter = get_iter(args);
-        const unsigned n = h.naxes();
-        unsigned i = 0;
-        std::vector<index_type> ii(n);
-        auto arg = get_next(iter);
-        while (arg) {
-          if (i==n) throw error(PyExc_ValueError,
-            "too many argument indices");
-          ii[i] = unpy_check<index_type>(arg);
-          arg = get_next(iter);
-          ++i;
-        }
-        // if (i==1) return py(h.join_index(ii[0]));
-        // else
-        if (i!=n) throw error(PyExc_ValueError,
-          "too few argument indices");
-        return py(h.join_index(ii));
+        return py( self->h.join_index( map_py_args(
+          args, unpy_check<index_type>, self->h.naxes()
+        )));
       } catch(...) { lipp(); return nullptr; }
-    }, METH_VARARGS, "axis at given index" },
-  // bin_at
-  // find_bin_index
-  // find_bin
+    }, METH_VARARGS, "compute global bin index" },
+  { "bin_at", (PyCFunction) +[](py_hist* self, PyObject* args) noexcept
+    -> PyObject* {
+      try {
+        return self->h.bin_at( map_py_args(
+          args, unpy_check<index_type>, self->h.naxes()
+        ));
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_VARARGS, "bin at given indices" },
+  { "find_bin_index", (PyCFunction) +[](py_hist* self, PyObject* args) noexcept
+    -> PyObject* {
+      try {
+        return py( self->h.find_bin_index( map_py_args(
+          args, unpy_check<edge_type>, self->h.naxes()
+        )));
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_VARARGS, "bin index from coordinates" },
+  { "find_bin", (PyCFunction) +[](py_hist* self, PyObject* args) noexcept
+    -> PyObject* {
+      try {
+        return self->h.find_bin( map_py_args(
+          args, unpy_check<edge_type>, self->h.naxes()
+        ));
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_VARARGS, "bin at given coordinates" },
   // fill_at
   { }
 };
@@ -560,8 +567,8 @@ struct py_module: PyModuleDef {
 PyMODINIT_FUNC PyInit_histograms() {
   using namespace ivanp::python;
 
-  Py_INCREF((ivanp::hist::sentinel_one = PyLong_FromLong(1)));
-  Py_INCREF((ivanp::hist::double_zero = py<double>(0.)));
+  ivanp::hist::sentinel_one = PyLong_FromLong(1); // never leaves the module
+  ivanp::hist::double_zero = py<double>(0.);
 
   struct {
     PyTypeObject* type;
