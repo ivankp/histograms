@@ -10,3 +10,5 @@ for T in (float,int,mc_bin):
     print(h(0.16))
     print(h(0.17))
     print(h(0.18))
+
+print(mc_bin.__dict__)

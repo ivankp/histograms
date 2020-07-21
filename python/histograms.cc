@@ -18,7 +18,6 @@
 #include <python.hh>
 
 using namespace std::string_literals;
-using ivanp::python::py_cast;
 
 // TODO: python copy constructor
 // https://stackoverflow.com/q/62976099/2640636
@@ -29,7 +28,7 @@ using namespace ivanp::python;
 
 using edge_type = double;
 
-static PyObject* sentinel_one;
+static PyObject *sentinel_one, *double_zero;
 
 struct py_axis {
   PyObject_HEAD // must not be overwritten in the constructor
@@ -220,6 +219,8 @@ struct py_bin_filler {
   }
 };
 
+extern struct hist_py_type hist_py_type;
+
 struct py_hist {
   PyObject_HEAD
 
@@ -241,26 +242,28 @@ struct py_hist {
   hist h;
 
   py_hist(PyObject* args, PyObject* kwargs)
-  : h([](PyObject* args) { // guaranteed tuple
-      hist::axes_type axes;
-      if (const auto nargs = tuple_size(args))
+  : h([](PyObject* args_tuple) { // guaranteed tuple
+      const auto* arg = tuple_items(args_tuple);
+      const auto nargs = tuple_size(args_tuple);
+      if (nargs==0) throw error(PyExc_TypeError,
+        "empty list of histogram arguments");
+      if (const auto* h_arg = py_dynamic_cast<py_hist>(*arg,&hist_py_type)) {
+        auto& axes = h_arg->h.axes();
+        for (auto& axis : axes)
+          Py_INCREF(axis);
+        return axes;
+      } else {
+        hist::axes_type axes;
         axes.reserve(nargs);
-      else throw error(PyExc_TypeError, "empty list of histogram arguments");
-
-      auto iter = get_iter(args);
-      auto arg = get_next(iter);
-      for (;;) { // loop over arguments
-        PyObject* ax = call_with_iterable(
-          py_cast<PyObject>(&axis_py_type), arg);
-        if (!ax) throw existing_error{};
-        TEST(as_str(ax))
-        axes.emplace_back(ax);
-
-        arg = get_next(iter);
-        if (!arg) break;
+        for (auto* const end=arg+nargs; arg!=end; ++arg) {
+          PyObject* ax = call_with_iterable(
+            py_cast<PyObject>(&axis_py_type), *arg);
+          if (!ax) throw existing_error{};
+          TEST(as_str(ax))
+          axes.emplace_back(ax);
+        }
+        return axes;
       }
-
-      return axes;
     }(args))
   {
     PyObject* bintype = nullptr;
@@ -270,13 +273,21 @@ struct py_hist {
         "histogram bintype argument must be a type");
     }
     if (bintype) {
-      for (auto& bin : h.bins()) {
+      for (auto& bin : h) {
         bin = py_ptr(PyObject_CallObject(bintype,nullptr));
         if (!bin) throw existing_error{};
       }
-    } else { // default to float-valued bins
-      for (auto& bin : h.bins())
-        bin = py_ptr(py<double>(0.));
+    } else {
+      if (const auto h_arg = py_dynamic_cast<py_hist>(
+        tuple_items(args)[0], &hist_py_type
+      )) {
+        map::map<map::flags::no_size_check>([](auto& to, const auto& from){
+          Py_INCREF((to = from));
+        },h,h_arg->h);
+      } else { // default to float-valued bins
+        for (auto& bin : h)
+          bin = py_ptr(double_zero);
+      }
     }
   }
 
@@ -485,8 +496,8 @@ struct py_mc_bin {
 
   PyObject* str() const noexcept {
     std::stringstream ss;
-    ss << "{ w: " << bin.bin.bin.w
-       << ", w2: " << bin.bin.bin.w2
+    ss << "{ w: " << bin.w
+       << ", w2: " << bin.w2
        << ", n: " << bin.n
        << " }";
     return py(std::move(ss).str());
@@ -547,8 +558,10 @@ struct py_module: PyModuleDef {
 } // end ivanp::hist namespace
 
 PyMODINIT_FUNC PyInit_histograms() {
-  ivanp::hist::sentinel_one = PyLong_FromLong(1);
-  if (!ivanp::hist::sentinel_one) return nullptr;
+  using namespace ivanp::python;
+
+  Py_INCREF((ivanp::hist::sentinel_one = PyLong_FromLong(1)));
+  Py_INCREF((ivanp::hist::double_zero = py<double>(0.)));
 
   struct {
     PyTypeObject* type;
@@ -562,6 +575,12 @@ PyMODINIT_FUNC PyInit_histograms() {
 
   for (auto [type, name] : py_types)
     if (PyType_Ready(type) < 0) return nullptr;
+
+  // PyDict_SetItemString(
+  //   ivanp::hist::mc_bin_py_type.tp_dict,
+  //   "weight",
+  //   &mc_bin::bin_type::weight
+  // );
 
   PyObject* m = PyModule_Create(&ivanp::hist::py_module);
   if (!m) return nullptr;

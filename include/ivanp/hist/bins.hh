@@ -91,30 +91,31 @@ struct stat_bin {
 };
 
 template <typename Bin, typename Count = long unsigned>
-struct counted_bin {
+struct counted_bin: Bin {
   using bin_type = Bin;
   using count_type = Count;
   using weight_type = typename bin_type::weight_type; // might need to default
 
-  bin_type bin;
+  bin_type& operator*() noexcept { return static_cast<bin_type&>(*this); }
+
   count_type n;
 
   counted_bin& operator++()
-  noexcept(noexcept(++bin)) {
-    ++bin;
+  noexcept(noexcept(++**this)) {
+    ++**this;
     ++n;
     return *this;
   }
   counted_bin& operator+=(const auto& weight)
-  noexcept(noexcept(bin += weight)) {
-    bin += weight;
+  noexcept(noexcept((**this) += weight)) {
+    (**this) += weight;
     ++n;
     return *this;
   }
   counted_bin& operator+=(const counted_bin<auto,auto>& o)
-  noexcept(noexcept(bin += o.bin)) {
-    bin += o.bin;
-    n   += o.n;
+  noexcept(noexcept((**this) += *o)) {
+    (**this) += *o;
+    n += o.n;
     return *this;
   }
 };
@@ -124,11 +125,12 @@ template <
   typename Weight = typename Bin::weight_type,
   typename Tag = void // in case multiple global weights are needed
 >
-struct static_weight_bin {
+struct static_weight_bin: Bin {
   using bin_type = Bin;
   using weight_type = Weight;
 
-  bin_type bin;
+  bin_type& operator*() noexcept { return static_cast<bin_type&>(*this); }
+
   inline static weight_type weight = []() -> weight_type {
     if constexpr (std::is_arithmetic_v<weight_type>) return 1;
     else return { };
@@ -136,23 +138,23 @@ struct static_weight_bin {
 
   static_weight_bin() = default;
   static_weight_bin() requires requires {
-    bin->resize(weight->size());
+      (**this)->resize(weight->size());
   } {
-    bin->resize(weight->size());
+    (**this)->resize(weight->size());
   }
 
   static_weight_bin& operator+=(const auto& weight)
-  noexcept(noexcept(bin += weight)) {
-    bin += weight;
+  noexcept(noexcept((**this) += weight)) {
+    (**this) += weight;
     return *this;
   }
   static_weight_bin operator++()
-  noexcept(noexcept(bin += weight)) {
+  noexcept(noexcept((**this) += weight)) {
     return *this += weight;
   }
   static_weight_bin& operator+=(const static_weight_bin<auto,auto,auto>& o)
-  noexcept(noexcept(bin += o.bin)) {
-    return *this += o.bin;
+  noexcept(noexcept((**this) += *o)) {
+    return (**this) += *o;
   }
 };
 
@@ -179,11 +181,12 @@ struct multi_bin {
 };
 
 template <typename Bin, typename Weight = typename Bin::weight_type>
-struct nlo_bin {
+struct nlo_bin: Bin {
   using bin_type = Bin;
   using weight_type = Weight;
 
-  bin_type bin;
+  bin_type& operator*() noexcept { return static_cast<bin_type&>(*this); }
+
   weight_type wsum;
   long unsigned nent = 0;
   static long unsigned id, prev_id;
@@ -193,7 +196,7 @@ struct nlo_bin {
     if (id == prev_id) ++wsum;
     else {
       prev_id = id;
-      bin += wsum;
+      (**this) += wsum;
       wsum = 1;
     }
     ++nent;
@@ -204,21 +207,21 @@ struct nlo_bin {
     if (id == prev_id) wsum += weight;
     else {
       prev_id = id;
-      bin += wsum;
+      (**this) += wsum;
       wsum = weight;
     }
     ++nent;
     return *this;
   }
   nlo_bin& finalize() noexcept {
-    bin += wsum;
+    (**this) += wsum;
     wsum = 0;
     return *this;
   }
   nlo_bin& operator+=(const nlo_bin<auto,auto>& o) noexcept {
     if (wsum!=0) finalize();
-    if (o.wsum!=0) bin += o.wsum;
-    bin += o.bin;
+    if (o.wsum!=0) (**this) += o.wsum;
+    (**this) += o.bin;
     nent += o.nent;
     return *this;
   }

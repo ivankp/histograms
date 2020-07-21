@@ -40,7 +40,8 @@ void lipp() noexcept { // Lippincott function
 
 template <typename T>
 concept has_ob_base =
-  requires(T& x) { x.ob_base; } && (offsetof(T,ob_base) == 0);
+  requires(T& x) { x.ob_base; }
+  && ( (!std::is_standard_layout_v<T>) || (offsetof(T,ob_base) == 0) );
 
 template <typename T, typename Base>
 struct upcast_trait: std::false_type { };
@@ -62,6 +63,13 @@ concept can_cast = can_upcast<A,B> || can_upcast<B,A>;
 
 template <typename To, can_cast<To> From>
 To* py_cast(From* p) noexcept { return reinterpret_cast<To*>(p); }
+
+template <typename To, can_cast<PyObject> From, typename ObType>
+To* py_dynamic_cast(From* p, ObType* ob_type) noexcept {
+  if (py_cast<PyObject>(p)->ob_type == ob_type)
+    return py_cast<To>(p);
+  else return nullptr;
+}
 
 template <typename T>
 [[nodiscard]] PyObject* py(const T& x) noexcept {
@@ -199,6 +207,8 @@ public:
   const PyObject* operator->() const noexcept { return p; }
   PyObject& operator*() noexcept { return *p; }
   const PyObject& operator*() const noexcept { return *p; }
+  PyObject* operator+() noexcept { return p; }
+  const PyObject* operator+() const noexcept { return p; }
 };
 
 // Iteration ========================================================
