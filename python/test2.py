@@ -9,7 +9,7 @@ class hbin:
         self.x += str(x)
         return self
     def __repr__(self):
-        return self.x;
+        return repr(self.x);
 
 h = histogram((1,2,3),[(5,0,10),11],bintype=list)
 
@@ -51,6 +51,8 @@ print()
 h2 = histogram(((10,0,1),),bintype=hbin)
 h2(0.55)
 h2((0.4,),'test',42)
+h2.fill_at((2,),'fill_at')
+h2.fill_at(5)
 for b in enumerate(h2):
     print(b)
 

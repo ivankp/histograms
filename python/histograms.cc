@@ -500,7 +500,58 @@ PyMethodDef hist_methods[] {
         ));
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "bin at given coordinates" },
-  // TODO: fill_at
+  { "fill_at", (PyCFunction) +[](py_hist* self, PyObject* args) noexcept
+    -> PyObject* {
+      try {
+        auto iter = get_iter(args); // guaranteed tuple
+        auto arg = get_next(iter);
+        if (!arg) throw error(PyExc_ValueError, // no arguments
+          "no arguments passed to histogram.fill_at()");
+
+        PyObject* fill_arg;
+        bool need_decref = false;
+        if (auto iter2 = get_iter(arg)) { // first arg is iterable
+          iter = iter2;
+          arg = get_next(iter);
+          const unsigned nargs = tuple_size(args) - 1;
+          if (nargs==0) {
+            fill_arg = sentinel_one;
+          } else {
+            auto arr1 = tuple_items(args);
+            if (nargs==1) {
+              fill_arg = arr1[1];
+            } else {
+              fill_arg = PyTuple_New(nargs);
+              std::copy(arr1+1, arr1+1+nargs, tuple_items(fill_arg));
+              for (PyObject** p=arr1+nargs; p!=arr1; --p)
+                Py_INCREF(*p);
+              need_decref = true;
+            }
+          }
+        } else { // first arg not iterable
+          PyErr_Clear();
+          fill_arg = sentinel_one;
+        }
+
+        PyObject* bin = self->h.fill_at([&]{
+          const unsigned n = self->h.naxes();
+          std::vector<index_type> ii(n);
+          unsigned i = 0;
+          for (; arg; ++i) {
+            if (i==n) throw error(PyExc_ValueError,
+              "too many indices passed to histogram.fill_at()");
+            ii[i] = unpy_check<index_type>(arg);
+            arg = get_next(iter);
+          }
+          if (i!=n) throw error(PyExc_ValueError,
+            "too few indices passed to histogram.fill_at()");
+          return ii;
+        }(), fill_arg);
+        Py_INCREF(bin);
+        if (need_decref) Py_DECREF(fill_arg);
+        return bin;
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_VARARGS, "fill bin at given index" },
   { }
 };
 
