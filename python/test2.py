@@ -4,10 +4,12 @@ from histograms import histogram, axis
 
 class hbin:
     def __init__(self):
-        self.x = float(0)
+        self.x = ''
     def __iadd__(self,x):
-        self.x += x
+        self.x += str(x)
         return self
+    def __repr__(self):
+        return self.x;
 
 h = histogram((1,2,3),[(5,0,10),11],bintype=list)
 
@@ -46,9 +48,9 @@ print(h.join_index(2,3))
 # print(h.join_index(45))
 print()
 
-h2 = histogram(((10,0,1),))
+h2 = histogram(((10,0,1),),bintype=hbin)
 h2(0.55)
-h2((0.4,),42)
+h2((0.4,),'test',42)
 for b in enumerate(h2):
     print(b)
 

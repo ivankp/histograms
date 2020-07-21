@@ -355,6 +355,8 @@ struct py_hist {
         } else {
           fill_arg = PyTuple_New(nargs);
           std::copy(arr1+1, arr1+1+nargs, tuple_items(fill_arg));
+          for (PyObject** p=arr1+nargs; p!=arr1; --p)
+            Py_INCREF(*p);
           need_decref = true;
         }
       }
