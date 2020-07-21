@@ -72,26 +72,35 @@ To* py_dynamic_cast(From* p, ObType* ob_type) noexcept {
   else return nullptr;
 }
 
-template <typename T>
-[[nodiscard]] PyObject* py(const T& x) noexcept {
-  if constexpr (std::is_floating_point_v<T>) {
-    return PyFloat_FromDouble(x);
-  } else
-  if constexpr (std::is_same_v<T,int> || std::is_same_v<T,long>) {
-    return PyLong_FromLong(x);
-  } else
-  if constexpr (std::is_same_v<T,unsigned> || std::is_same_v<T,unsigned long>) {
-    return PyLong_FromUnsignedLong(x);
-  } else
-  if constexpr (std::is_same_v<T,long long>) {
-    return PyLong_FromLongLong(x);
-  } else
-  if constexpr (std::is_same_v<T,unsigned long long>) {
-    return PyLong_FromUnsignedLongLong(x);
-  } else
-  if constexpr (stringlike<const T>) {
-    return PyUnicode_FromStringAndSize(x.data(),x.size());
-  }
+[[nodiscard]] PyObject* py(either<double,float> auto x) noexcept {
+  return PyFloat_FromDouble(x);
+}
+[[nodiscard]] PyObject* py(either<int,long,short> auto x) noexcept {
+  return PyLong_FromLong(x);
+}
+[[nodiscard]] PyObject* py(
+  either<unsigned,unsigned long,unsigned short> auto x
+) noexcept {
+  return PyLong_FromUnsignedLong(x);
+}
+[[nodiscard]] PyObject* py(either<long long> auto x) noexcept {
+  return PyLong_FromLongLong(x);
+}
+[[nodiscard]] PyObject* py(either<unsigned long long> auto x) noexcept {
+  return PyLong_FromUnsignedLongLong(x);
+}
+[[nodiscard]] PyObject* py(const stringlike auto& x) noexcept {
+  return PyUnicode_FromStringAndSize(x.data(),x.size());
+}
+[[nodiscard]] PyObject* py(const char* x) noexcept {
+  return py(std::string_view(x));
+}
+template <size_t N>
+[[nodiscard]] PyObject* py(const char (&x)[N]) noexcept {
+  return py(std::string_view(x,N));
+}
+[[nodiscard]] PyObject* py(can_upcast<PyObject> auto* x) noexcept {
+  return py_cast<PyObject>(x);
 }
 
 template <typename T>

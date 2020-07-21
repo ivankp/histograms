@@ -53,6 +53,7 @@ h2(0.55)
 h2((0.4,),'test',42)
 h2.fill_at((2,),'fill_at')
 h2.fill_at(5)
+h2.fill_at([5])
 for b in enumerate(h2):
     print(b)
 

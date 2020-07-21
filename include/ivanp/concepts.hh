@@ -1,6 +1,8 @@
 #ifndef IVANP_CONCEPTS_HH
 #define IVANP_CONCEPTS_HH
 
+#include <type_traits>
+
 namespace ivanp {
 
 template <typename From, typename To>
@@ -11,6 +13,9 @@ concept stringlike = requires (T& x) {
   { x.data() } -> convertible_to<const char*>;
   { x.size() } -> convertible_to<size_t>;
 };
+
+template <typename A, typename... B>
+concept either = std::disjunction_v<std::is_same<A,B>...>;
 
 }
 

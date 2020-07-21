@@ -20,16 +20,23 @@
 using namespace std::string_literals;
 using namespace ivanp::map::operators;
 
-// TODO: copy, deepcopy
-// https://stackoverflow.com/q/62976099/2640636
-
 namespace ivanp::hist {
 namespace {
 using namespace ivanp::python;
 
+// TODO: fix __reduce__ expanding uniform axis
+
 using edge_type = double;
 
 static PyObject *sentinel_one, *double_zero;
+
+struct axis_py_type: PyTypeObject {
+  axis_py_type();
+} axis_py_type;
+
+struct hist_py_type: PyTypeObject {
+  hist_py_type();
+} hist_py_type;
 
 struct py_axis {
   PyObject_HEAD // must not be overwritten in the constructor
@@ -55,7 +62,6 @@ struct py_axis {
       " [nbins,min,max] or [nbins,min,max,\"flags\"]");
   }
 
-  // TODO: allow axes as chuncks in constructor
   py_axis(PyObject* args, PyObject* kwargs) {
     std::vector<edge_type> edges;
     index_type nbins = 0;
@@ -66,6 +72,23 @@ struct py_axis {
     if (!arg) throw error(PyExc_TypeError,
       "empty list of axis arguments");
     for (;;) { // loop over arguments
+      TEST(arg->ob_type->tp_name)
+      TEST(unpy<std::string_view>(PyObject_Str(arg)))
+      if (arg->ob_type == &axis_py_type) {
+        auto* ptr = &**py_cast<py_axis>(+arg);
+        if (auto* axis = dynamic_cast<
+          const py_axis::uniform_axis_type* >(ptr)
+        ) {
+          nbins = axis->nbins();
+          min = axis->min();
+          max = axis->max();
+        } else if (auto* axis = dynamic_cast<
+          const py_axis::list_axis_type* >(ptr)
+        ) {
+          auto& src = axis->edges();
+          edges.insert(edges.end(), src.begin(), src.end());
+        }
+      } else
       if (auto subiter = get_iter(arg)) { // uniform chunk
         // strings are also iterable and will enter here
 
@@ -223,28 +246,51 @@ PyMethodDef axis_methods[] {
         return py((*self)->upper(unpy_check<index_type>(arg)));
       } catch (...) { lipp(); return nullptr; }
     }, METH_O, "upper bin edge" },
+  { "__reduce__", (PyCFunction) +[](py_axis* self) noexcept
+    -> PyObject* {
+      PyObject* const tup = PyTuple_New(2);
+      auto* const t = tuple_items(tup);
+      t[0] = py(reinterpret_cast<PyTypeObject*>(&axis_py_type));
+      if (auto* axis = dynamic_cast<
+        const py_axis::uniform_axis_type* >(&**self)
+      ) {
+        auto* x = tuple_items((
+          tuple_items(( t[1] = PyTuple_New(1) ))[0] = PyTuple_New(3) ));
+        x[0] = py(axis->nbins());
+        x[1] = py(axis->min());
+        x[2] = py(axis->max());
+      } else if (auto* axis = dynamic_cast<
+        const py_axis::list_axis_type* >(&**self)
+      ) {
+        map::map<map::flags::no_size_check>([](auto& to, edge_type from){
+          to = py(from);
+        }, tuple_span(PyTuple_New(axis->nedges())), axis->edges());
+      }
+      TEST(unpy<std::string_view>(PyObject_Str(py(self))))
+      TEST(unpy<std::string_view>(PyObject_Str(tup)))
+      return tup;
+    }, METH_NOARGS, "" },
   { }
 };
 
-struct axis_py_type: PyTypeObject {
-  axis_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
-    tp_name = "histograms.axis";
-    tp_basicsize = sizeof(py_axis);
-    tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_axis>;
-    tp_call = (::ternaryfunc) ivanp::python::tp_call<py_axis>;
-    tp_str = (::reprfunc) ivanp::python::tp_str<py_axis>;
-    tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
-    tp_doc = "axis object";
-    tp_methods = axis_methods;
-    tp_new = (::newfunc) ivanp::python::tp_new<py_axis>;
-    tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
-      return PyObject_CallObject(
-        py_cast<PyObject>(&axis_iter_py_type),
-        +static_py_tuple(self)
-      );
-    };
-  }
-} axis_py_type;
+axis_py_type::axis_py_type()
+: PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+  tp_name = "histograms.axis";
+  tp_basicsize = sizeof(py_axis);
+  tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_axis>;
+  tp_call = (::ternaryfunc) ivanp::python::tp_call<py_axis>;
+  tp_str = (::reprfunc) ivanp::python::tp_str<py_axis>;
+  tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+  tp_doc = "axis object";
+  tp_methods = axis_methods;
+  tp_new = (::newfunc) ivanp::python::tp_new<py_axis>;
+  tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
+    return PyObject_CallObject(
+      py(&axis_iter_py_type),
+      +static_py_tuple(self)
+    );
+  };
+}
 
 // end axis defs ====================================================
 
@@ -256,8 +302,6 @@ struct py_bin_filler {
     return bin;
   }
 };
-
-extern struct hist_py_type hist_py_type;
 
 struct py_hist {
   PyObject_HEAD
@@ -294,8 +338,7 @@ struct py_hist {
         hist::axes_type axes;
         axes.reserve(nargs);
         for (auto* const end=arg+nargs; arg!=end; ++arg) {
-          PyObject* ax = call_with_iterable(
-            py_cast<PyObject>(&axis_py_type), *arg);
+          PyObject* ax = call_with_iterable(py(&axis_py_type), *arg);
           if (!ax) throw existing_error{};
           TEST(as_str(ax))
           axes.emplace_back(ax);
@@ -325,7 +368,7 @@ struct py_hist {
             Py_INCREF((to = from));
           else
             to = py_ptr(PyObject_CallObject(
-              py_cast<PyObject>(ob_type), +static_py_tuple(+from) ));
+              py(ob_type), +static_py_tuple(+from) ));
         },h,arg->h);
       } else { // default to float-valued bins
         for (auto& bin : h)
@@ -552,6 +595,33 @@ PyMethodDef hist_methods[] {
         return bin;
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "fill bin at given index" },
+  // https://www.python.org/dev/peps/pep-0307/#extended-reduce-api
+  { "__reduce__", (PyCFunction) +[](py_hist* self) noexcept
+    -> PyObject* {
+      auto& h = self->h;
+      PyObject* const tup = PyTuple_New(3);
+      auto* const t = tuple_items(tup);
+      t[0] = py(reinterpret_cast<PyTypeObject*>(&hist_py_type));
+
+      std::copy(h.axes().begin(),h.axes().end(),
+        tuple_items(( t[1] = PyTuple_New(h.naxes()) )) );
+      h.axes() | [](PyObject* p) noexcept { Py_INCREF(p); };
+
+      std::copy(h.begin(),h.end(),
+        tuple_items(( t[2] = PyTuple_New(h.size()) )) );
+      h | [](PyObject* p) noexcept { Py_INCREF(p); };
+
+      return tup;
+    }, METH_NOARGS, "" },
+  { "__setstate__", (PyCFunction) +[](py_hist* self, PyObject* arg) noexcept
+    -> PyObject* {
+      try {
+        map::map([](auto& to, PyObject* from) noexcept {
+          Py_INCREF(( to = py_ptr(from) ));
+        }, self->h, tuple_span(arg));
+      } catch (...) { lipp(); return nullptr; }
+      Py_RETURN_NONE;
+    }, METH_O, "" },
   { }
 };
 
@@ -564,26 +634,25 @@ struct hist_mp_methods: PyMappingMethods {
   }
 } hist_mp_methods;
 
-struct hist_py_type: PyTypeObject {
-  hist_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
-    tp_name = "histograms.histogram";
-    tp_basicsize = sizeof(py_hist);
-    tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_hist>;
-    tp_as_mapping = &hist_mp_methods;
-    tp_call = (::ternaryfunc) ivanp::python::tp_call<py_hist>;
-    // tp_str = (::reprfunc) ivanp::python::tp_str<py_hist>;
-    tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
-    tp_doc = "histogram object";
-    tp_methods = hist_methods;
-    tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
-    tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
-      return PyObject_CallObject(
-        py_cast<PyObject>(&hist_iter_py_type),
-        +static_py_tuple(self)
-      );
-    };
-  }
-} hist_py_type;
+hist_py_type::hist_py_type()
+: PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+  tp_name = "histograms.histogram";
+  tp_basicsize = sizeof(py_hist);
+  tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_hist>;
+  tp_as_mapping = &hist_mp_methods;
+  tp_call = (::ternaryfunc) ivanp::python::tp_call<py_hist>;
+  // tp_str = (::reprfunc) ivanp::python::tp_str<py_hist>;
+  tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+  tp_doc = "histogram object";
+  tp_methods = hist_methods;
+  tp_new = (::newfunc) ivanp::python::tp_new<py_hist>;
+  tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
+    return PyObject_CallObject(
+      py(&hist_iter_py_type),
+      +static_py_tuple(self)
+    );
+  };
+}
 
 // end hist defs ====================================================
 
@@ -634,19 +703,27 @@ struct mc_bin_py_type: PyTypeObject {
 
 // end bin defs =====================================================
 
-/*
 PyMethodDef methods[] {
-  { "histogram", make, METH_VARARGS | METH_KEYWORDS,
-    "initializes a histogram" },
+  { "restore_histogram", (PyCFunction) +[](py_hist* self, PyObject* args)
+    noexcept -> PyObject* {
+      try {
+        // auto args = tuple_span(args);
+        // auto* h = PyObject_CallObject(
+        //   py(&axis_iter_py_type),
+        //   +static_py_tuple(self)
+        // );
+        return PyObject_Str(args);
+      } catch(...) { lipp(); return nullptr; }
+    }, METH_VARARGS, "restore a histogram from tuple returned by __reduce__" },
   { } // sentinel
 };
-*/
 
 struct py_module: PyModuleDef {
   py_module(): PyModuleDef{ PyModuleDef_HEAD_INIT } {
     m_name = "histograms";
     m_doc = "Python bindings for the histograms library";
     m_size = -1;
+    m_methods = methods;
   }
 } py_module;
 
@@ -690,7 +767,7 @@ PyMODINIT_FUNC PyInit_histograms() {
   for (auto [type, name] : py_types) {
     Py_INCREF(type);
     ++n;
-    if (PyModule_AddObject(m, name, py_cast<PyObject>(type)) < 0) {
+    if (PyModule_AddObject(m, name, py(type)) < 0) {
       do {
         Py_DECREF(py_types[--n].type);
       } while (n);
