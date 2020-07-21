@@ -279,12 +279,17 @@ struct py_hist {
         if (!bin) throw existing_error{};
       }
     } else {
-      if (const auto h_arg = py_dynamic_cast<py_hist>(
+      if (const auto arg = py_dynamic_cast<py_hist>(
         tuple_items(args)[0], &hist_py_type
       )) {
-        map::map<map::flags::no_size_check>([](auto& to, const auto& from){
-          Py_INCREF((to = from));
-        },h,h_arg->h);
+        map::map<map::flags::no_size_check>([](auto& to, auto& from){
+          auto* const ob_type = from->ob_type;
+          if (ob_type == &PyFloat_Type || ob_type == &PyLong_Type)
+            Py_INCREF((to = from));
+          else
+            to = py_ptr(PyObject_CallObject(
+              py_cast<PyObject>(ob_type), +static_py_tuple(+from) ));
+        },h,arg->h);
       } else { // default to float-valued bins
         for (auto& bin : h)
           Py_INCREF((bin = py_ptr(double_zero)));
@@ -458,7 +463,7 @@ PyMethodDef hist_methods[] {
         ));
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "bin at given coordinates" },
-  // fill_at
+  // TODO: fill_at
   { }
 };
 
@@ -486,7 +491,7 @@ struct hist_py_type: PyTypeObject {
     tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
       return PyObject_CallObject(
         py_cast<PyObject>(&hist_iter_py_type),
-        *static_py_tuple(self)
+        +static_py_tuple(self)
       );
     };
   }

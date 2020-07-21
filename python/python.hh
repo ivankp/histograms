@@ -265,16 +265,27 @@ struct static_py_tuple {
   alignas(PyTupleObject)
   char buff[tuple_size + (N>1 ? N-1 : 0)*ptr_size];
 
-  PyTupleObject* tup() noexcept {
-    return reinterpret_cast<PyTupleObject*>(buff);
+  PyTupleObject& operator*() noexcept {
+    return *reinterpret_cast<PyTupleObject*>(buff);
+  }
+  const PyTupleObject& operator*() const noexcept {
+    return *reinterpret_cast<PyTupleObject*>(buff);
+  }
+  PyTupleObject* operator->() noexcept { return &**this; }
+  const PyTupleObject* operator->() const noexcept { return &**this; }
+  PyObject* operator+() noexcept {
+    return py_cast<PyObject>(&**this);
+  }
+  const PyObject* operator+() const noexcept {
+    return py_cast<const PyObject>(&**this);
   }
 
   static_py_tuple(auto*... xs) noexcept requires (sizeof...(xs)==N) {
-    new (tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
-    new (tup()->ob_item) (PyObject*[N]) { py_cast<PyObject>(xs)... };
+    new (&**this) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type,N) };
+    new ((*this)->ob_item) (PyObject*[N]) { py_cast<PyObject>(xs)... };
   }
 
-  PyObject* operator*() noexcept { return py_cast<PyObject>(tup()); }
+  // PyObject* operator*() noexcept { return py_cast<PyObject>(tup()); }
 };
 template <typename... T>
 static_py_tuple(T*... xs) -> static_py_tuple<sizeof...(T)>;
@@ -285,19 +296,28 @@ struct dynamic_py_tuple {
 
   char* buff;
 
-  PyTupleObject* tup() noexcept {
-    return reinterpret_cast<PyTupleObject*>(buff);
+  PyTupleObject& operator*() noexcept {
+    return *reinterpret_cast<PyTupleObject*>(buff);
+  }
+  const PyTupleObject& operator*() const noexcept {
+    return *reinterpret_cast<PyTupleObject*>(buff);
+  }
+  PyTupleObject* operator->() noexcept { return &**this; }
+  const PyTupleObject* operator->() const noexcept { return &**this; }
+  PyObject* operator+() noexcept {
+    return py_cast<PyObject>(&**this);
+  }
+  const PyObject* operator+() const noexcept {
+    return py_cast<const PyObject>(&**this);
   }
 
   dynamic_py_tuple(auto a, auto b) noexcept
   : buff([n=b-a]{ return new char[tuple_size + (n>1 ? n-1 : 0)*ptr_size]; }())
   {
-    new (tup()) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
-    std::copy(a, b, tup()->ob_item);
+    new (&**this) PyTupleObject { PyVarObject_HEAD_INIT(&PyTuple_Type, b-a) };
+    std::copy(a, b, (*this)->ob_item);
   }
   ~dynamic_py_tuple() { delete[] buff; }
-
-  PyObject* operator*() noexcept { return py_cast<PyObject>(tup()); }
 };
 
 template <typename F>
