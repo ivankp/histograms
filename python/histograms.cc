@@ -20,7 +20,7 @@
 using namespace std::string_literals;
 using namespace ivanp::map::operators;
 
-// TODO: python copy constructor
+// TODO: copy, deepcopy
 // https://stackoverflow.com/q/62976099/2640636
 
 namespace ivanp::hist {
@@ -55,6 +55,7 @@ struct py_axis {
       " [nbins,min,max] or [nbins,min,max,\"flags\"]");
   }
 
+  // TODO: allow axes as chuncks in constructor
   py_axis(PyObject* args, PyObject* kwargs) {
     std::vector<edge_type> edges;
     index_type nbins = 0;
@@ -153,6 +154,36 @@ struct py_axis {
   }
 }; // end py_axis ---------------------------------------------------
 
+struct py_axis_iter {
+  PyObject_HEAD // must not be overwritten in the constructor
+
+  using base_type = typename py_axis::base_type;
+  const base_type& axis;
+  index_type i;
+
+  py_axis_iter(PyObject* args, PyObject* kwargs) noexcept
+  : py_axis_iter( **py_cast<py_axis>( tuple_items(args)[0] ) )
+  { }
+
+  py_axis_iter(base_type& axis) noexcept: axis(axis), i(0) { }
+};
+
+struct axis_iter_py_type: PyTypeObject {
+  axis_iter_py_type(): PyTypeObject{ PyVarObject_HEAD_INIT(nullptr, 0) } {
+    tp_name = "histograms.axis_iterator";
+    tp_basicsize = sizeof(py_axis_iter);
+    tp_new = (::newfunc) ivanp::python::tp_new<py_axis_iter>;
+    tp_dealloc = (::destructor) ivanp::python::tp_dealloc<py_axis_iter>;
+    tp_iternext = (::iternextfunc) +[](py_axis_iter* self) noexcept
+      -> PyObject* {
+        const auto& axis = self->axis;
+        auto& i = self->i;
+        if (i == axis.nedges()) return nullptr;
+        return py(axis.edge(i++));
+      };
+  }
+} axis_iter_py_type;
+
 PyMethodDef axis_methods[] {
   { "nbins", (PyCFunction) +[](py_axis* self) noexcept {
       return py((*self)->nbins());
@@ -206,6 +237,12 @@ struct axis_py_type: PyTypeObject {
     tp_doc = "axis object";
     tp_methods = axis_methods;
     tp_new = (::newfunc) ivanp::python::tp_new<py_axis>;
+    tp_iter = (::getiterfunc) +[](PyObject* self) noexcept {
+      return PyObject_CallObject(
+        py_cast<PyObject>(&axis_iter_py_type),
+        +static_py_tuple(self)
+      );
+    };
   }
 } axis_py_type;
 
@@ -371,8 +408,6 @@ struct py_hist {
     return bin;
   }
 }; // end py_hist ---------------------------------------------------
-
-// TODO: implement fast call (since python 3.7)
 
 struct py_hist_iter {
   PyObject_HEAD // must not be overwritten in the constructor
@@ -580,6 +615,7 @@ PyMODINIT_FUNC PyInit_histograms() {
     const char* name;
   } static constexpr py_types[] {
     { &ivanp::hist::axis_py_type, "axis" },
+    { &ivanp::hist::axis_iter_py_type, "axis_iterator" },
     { &ivanp::hist::hist_py_type, "histogram" },
     { &ivanp::hist::hist_iter_py_type, "histogram_iterator" },
     { &ivanp::hist::mc_bin_py_type, "mc_bin" }

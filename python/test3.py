@@ -15,6 +15,9 @@ print(h.axis(1))
 print(h.axis(-1))
 print(h.axis(-2))
 
+print(*h.axis(0))
+print(*h.axis(1))
+
 print(h.axis(0).find_bin_index(15.1))
 print()
 

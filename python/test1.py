@@ -15,7 +15,12 @@ print(ax.nedges())
 
 print(axis((5,1,5)))
 print(axis((10,0,10),5.5,11,(9,10,100),71.5))
+print()
 
+a1 = axis((5,0,100))
+print(a1)
+a2 = axis(*a1)
+print(a2)
 print()
 
 tup = (1,5,10,50,100)
