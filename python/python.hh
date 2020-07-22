@@ -72,7 +72,8 @@ To* py_dynamic_cast(From* p, ObType* ob_type) noexcept {
   else return nullptr;
 }
 
-[[nodiscard]] PyObject* py(either<double,float> auto x) noexcept {
+template <typename T> requires std::is_floating_point_v<T>
+[[nodiscard]] PyObject* py(T x) noexcept {
   return PyFloat_FromDouble(x);
 }
 [[nodiscard]] PyObject* py(either<int,long,short> auto x) noexcept {
@@ -89,15 +90,14 @@ To* py_dynamic_cast(From* p, ObType* ob_type) noexcept {
 [[nodiscard]] PyObject* py(either<unsigned long long> auto x) noexcept {
   return PyLong_FromUnsignedLongLong(x);
 }
+[[nodiscard]] PyObject* py(either<bool> auto x) noexcept {
+  return PyBool_FromLong(x);
+}
 [[nodiscard]] PyObject* py(const stringlike auto& x) noexcept {
-  return PyUnicode_FromStringAndSize(x.data(),x.size());
+  return PyUnicode_FromStringAndSize(std::data(x),std::size(x));
 }
 [[nodiscard]] PyObject* py(const char* x) noexcept {
   return py(std::string_view(x));
-}
-template <size_t N>
-[[nodiscard]] PyObject* py(const char (&x)[N]) noexcept {
-  return py(std::string_view(x,N));
 }
 [[nodiscard]] PyObject* py(can_upcast<PyObject> auto* x) noexcept {
   return py_cast<PyObject>(x);
@@ -108,22 +108,22 @@ template <typename T>
   if constexpr (std::is_floating_point_v<T>) {
     return PyFloat_AsDouble(p);
   } else
-  if constexpr (std::is_same_v<T,int> || std::is_same_v<T,long>) {
+  if constexpr (either<T,int,long,short>) {
     return PyLong_AsLong(p);
   } else
-  if constexpr (std::is_same_v<T,unsigned> || std::is_same_v<T,unsigned long>) {
+  if constexpr (either<T,unsigned,unsigned long,unsigned short>) {
     return PyLong_AsUnsignedLong(p);
   } else
-  if constexpr (std::is_same_v<T,long long>) {
+  if constexpr (either<T,long long>) {
     return PyLong_AsLongLong(p);
   } else
-  if constexpr (std::is_same_v<T,unsigned long long>) {
+  if constexpr (either<T,unsigned long long>) {
     return PyLong_AsUnsignedLongLong(p);
   } else
-  if constexpr (std::is_same_v<T,bool>) {
+  if constexpr (either<T,bool>) {
     return PyObject_IsTrue(p);
   } else
-  if constexpr (stringlike<const T>) {
+  if constexpr (stringlike<T>) {
     // https://docs.python.org/3/c-api/unicode.html
     const size_t len = PyUnicode_GET_DATA_SIZE(p);
     if (len==0) return { };
