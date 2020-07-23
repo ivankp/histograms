@@ -12,23 +12,22 @@
 
 namespace ivanp::hist {
 
-template <typename> const char* bin_def() noexcept;
-
-using json = nlohmann::json;
+template <typename> const char* bin_def();
 
 template <typename List, bool Poly, typename Edge>
-void to_json(json& j, const list_axis<List,Poly,Edge>& axis) {
+void to_json(nlohmann::json& j, const list_axis<List,Poly,Edge>& axis) {
   j = axis.edges();
 }
 
 template <Histogram H>
-void to_json(json& j, const H& h) {
+void to_json(nlohmann::json& j, const H& h) {
   j = { {"axes", h.axes()} };
   using bin_type = typename H::bin_type;
+  auto& bins = j["bins"];
   if constexpr (std::is_arithmetic_v<bin_type>)
-    j["bins"] = h.bins();
+    bins = h.bins();
   else
-    j["bins"] = { json::parse(bin_def<bin_type>()), h.bins() };
+    bins = { nlohmann::json::parse(bin_def<bin_type>()), h.bins() };
 }
 
 // void from_json(const json& j, Histogram auto& h) {
@@ -43,20 +42,21 @@ concept HistogramDict = requires (T& hs) {
   { *std::get<1>(*hs.begin()) } -> ivanp::hist::Histogram;
 };
 
-json to_json(const HistogramDict auto& hs) {
+nlohmann::json to_json(const HistogramDict auto& hs) {
+  using nlohmann::json;
   json axes  = json::array(),
        bins  = json::array(),
        hists = json::object();
-  for (const auto& [name, h] : hs) {
-    json hj = *h;
-    for (auto& ha : hj["axes"]) {
+  for (const auto& [name, h_ptr] : hs) {
+    auto& h = hists[name] = *h_ptr;
+    for (auto& ha : h["axes"]) {
       unsigned i = 0, n = axes.size();
       for (; i<n; ++i)
         if (ha == axes[i]) break;
       if (i==n) axes.push_back(std::move(ha));
       ha = i;
     }
-    auto& hbins = hj["bins"];
+    auto& hbins = h["bins"];
     if (hbins.size()==2 && hbins[0].is_array()) {
       auto& hb = hbins[0];
       unsigned i = 0, n = bins.size();
@@ -65,7 +65,6 @@ json to_json(const HistogramDict auto& hs) {
       if (i==n) bins.push_back(std::move(hb));
       hb = i;
     }
-    hists[name] = std::move(hj);
   }
   return {
     { "axes" , std::move(axes ) },
@@ -75,11 +74,11 @@ json to_json(const HistogramDict auto& hs) {
 }
 
 #ifdef IVANP_HISTOGRAMS_BINS_HH
-void to_json(json& j, const mc_bin& b) {
+void to_json(nlohmann::json& j, const mc_bin& b) {
   j = { b.w, b.w2, b.n };
 }
 template <>
-constexpr const char* bin_def<mc_bin>() noexcept {
+constexpr const char* bin_def<mc_bin>() {
   return R"(["w","w2","n"])";
 }
 #endif
