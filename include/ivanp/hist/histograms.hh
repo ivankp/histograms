@@ -291,6 +291,14 @@ public:
 
 };
 
+template <typename>
+struct is_histogram: std::false_type { };
+template <typename Bin, typename Axes, typename... Specs>
+struct is_histogram<histogram<Bin,Axes,Specs...>>: std::true_type { };
+
+template <typename T>
+concept Histogram = is_histogram<std::decay_t<T>>::value;
+
 } // end namespace ivanp::hist
 
 #endif
