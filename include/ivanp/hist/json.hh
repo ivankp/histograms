@@ -12,7 +12,10 @@
 
 namespace ivanp::hist {
 
-template <typename> const char* bin_def();
+template <typename>
+struct bin_def {
+  static const char* str();
+};
 
 template <typename List, bool Poly, typename Edge>
 void to_json(nlohmann::json& j, const list_axis<List,Poly,Edge>& axis) {
@@ -27,7 +30,7 @@ void to_json(nlohmann::json& j, const H& h) {
   if constexpr (std::is_arithmetic_v<bin_type>)
     bins = h.bins();
   else
-    bins = { nlohmann::json::parse(bin_def<bin_type>()), h.bins() };
+    bins = { nlohmann::json::parse(bin_def<bin_type>::str()), h.bins() };
 }
 
 // void from_json(const json& j, Histogram auto& h) {
@@ -38,8 +41,8 @@ void to_json(nlohmann::json& j, const H& h) {
 
 template <typename T>
 concept HistogramDict = requires (T& hs) {
-  {  std::get<0>(*hs.begin()) } -> ivanp::stringlike;
-  { *std::get<1>(*hs.begin()) } -> ivanp::hist::Histogram;
+  {  std::get<0>(*hs.begin()) } -> convertible_to<std::string>;
+  { *std::get<1>(*hs.begin()) } -> Histogram;
 };
 
 nlohmann::json to_json(const HistogramDict auto& hs) {
@@ -74,13 +77,37 @@ nlohmann::json to_json(const HistogramDict auto& hs) {
 }
 
 #ifdef IVANP_HISTOGRAMS_BINS_HH
-void to_json(nlohmann::json& j, const mc_bin& b) {
+
+void to_json(nlohmann::json& j, const ww2_bin<auto>& b) {
+  j = { b.w, b.w2 };
+}
+template <typename T>
+struct bin_def<ww2_bin<T>> {
+  static constexpr const char* str() noexcept {
+    return R"(["w","w2"])";
+  }
+};
+
+void to_json(nlohmann::json& j, const mc_bin<auto,auto>& b) {
   j = { b.w, b.w2, b.n };
 }
-template <>
-constexpr const char* bin_def<mc_bin>() {
-  return R"(["w","w2","n"])";
+template <typename T, typename C>
+struct bin_def<mc_bin<T,C>> {
+  static constexpr const char* str() noexcept {
+    return R"(["w","w2","n"])";
+  }
+};
+
+void to_json(nlohmann::json& j, const nlo_mc_multibin& b) {
+  j = { b.ww2, b.n, b.nent };
 }
+template <>
+struct bin_def<nlo_mc_multibin> {
+  static constexpr const char* str() noexcept {
+    return R"(null)";
+  }
+};
+
 #endif
 
 } // end namespace ivanp::hist

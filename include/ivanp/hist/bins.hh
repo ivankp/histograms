@@ -1,7 +1,6 @@
 #ifndef IVANP_HISTOGRAMS_BINS_HH
 #define IVANP_HISTOGRAMS_BINS_HH
 
-#include <ivanp/map/map.hh>
 #include <cmath>
 
 namespace ivanp::hist {
@@ -26,6 +25,35 @@ struct ww2_bin {
   noexcept(noexcept(w += o.w)) {
     w  += o.w;
     w2 += o.w2;
+    return *this;
+  }
+};
+
+template <typename Weight = double, typename Count = long unsigned>
+struct mc_bin {
+  using weight_type = Weight;
+  using count_type = Count;
+
+  weight_type w = 0, w2 = 0;
+  count_type n = 0;
+  mc_bin& operator++() noexcept(noexcept(++w)) {
+    ++w;
+    ++w2;
+    ++n;
+    return *this;
+  }
+  mc_bin& operator+=(const auto& weight)
+  noexcept(noexcept(w += weight)) {
+    w  += weight;
+    w2 += weight*weight;
+    ++n;
+    return *this;
+  }
+  mc_bin& operator+=(const mc_bin<auto,auto>& o)
+  noexcept(noexcept(w += o.w)) {
+    w  += o.w;
+    w2 += o.w2;
+    n += o.n;
     return *this;
   }
 };
@@ -90,157 +118,44 @@ struct stat_bin {
   double stdev    () const noexcept { return std::sqrt(variance()); }
 };
 
-template <typename Bin, typename Count = long unsigned>
-struct counted_bin: Bin {
-  using bin_type = Bin;
-  using count_type = Count;
-  using weight_type = typename bin_type::weight_type; // might need to default
+struct nlo_mc_multibin {
+  std::vector<ww2_bin<double>> ww2;
+  std::vector<double> wsum;
+  inline static std::vector<double> weight;
+  int prev_id = -1;
+  inline static int id;
+  long unsigned n=0, nent=0;
 
-  bin_type& operator*() noexcept { return static_cast<bin_type&>(*this); }
-
-  count_type n;
-
-  counted_bin& operator++()
-  noexcept(noexcept(++**this)) {
-    ++**this;
-    ++n;
-    return *this;
-  }
-  counted_bin& operator+=(const auto& weight)
-  noexcept(noexcept((**this) += weight)) {
-    (**this) += weight;
-    ++n;
-    return *this;
-  }
-  counted_bin& operator+=(const counted_bin<auto,auto>& o)
-  noexcept(noexcept((**this) += *o)) {
-    (**this) += *o;
-    n += o.n;
-    return *this;
-  }
-};
-
-template <
-  typename Bin,
-  typename Weight = typename Bin::weight_type,
-  typename Tag = void // in case multiple global weights are needed
->
-struct static_weight_bin: Bin {
-  using bin_type = Bin;
-  using weight_type = Weight;
-
-  bin_type& operator*() noexcept { return static_cast<bin_type&>(*this); }
-
-  inline static weight_type weight = []() -> weight_type {
-    if constexpr (std::is_arithmetic_v<weight_type>) return 1;
-    else return { };
-  }();
-
-  static_weight_bin() = default;
-  static_weight_bin() requires requires {
-      (**this)->resize(weight->size());
-  } {
-    (**this)->resize(weight->size());
-  }
-
-  static_weight_bin& operator+=(const auto& weight)
-  noexcept(noexcept((**this) += weight)) {
-    (**this) += weight;
-    return *this;
-  }
-  static_weight_bin operator++()
-  noexcept(noexcept((**this) += weight)) {
-    return *this += weight;
-  }
-  static_weight_bin& operator+=(const static_weight_bin<auto,auto,auto>& o)
-  noexcept(noexcept((**this) += *o)) {
-    return (**this) += *o;
-  }
-};
-
-template <typename T>
-struct multi_bin {
-  T xs;
-
-  multi_bin& operator++() noexcept {
-    ivanp::map::map([](auto& x){ ++x; }, xs);
-    return *this;
-  }
-  multi_bin& operator+=(const auto& arg) noexcept {
-    ivanp::map::map([](auto& x, auto& a){ x += a; }, xs, arg);
-    return *this;
-  }
-  multi_bin& operator+=(const multi_bin<auto>& o) noexcept {
-    return *this += o.xs;
-  }
-
-  T operator->() noexcept { return &xs; }
-  const T operator->() const noexcept { return &xs; }
-  T& operator*() noexcept { return xs; }
-  const T& operator*() const noexcept { return xs; }
-};
-
-template <typename Bin, typename Weight = typename Bin::weight_type>
-struct nlo_bin: Bin {
-  using bin_type = Bin;
-  using weight_type = Weight;
-
-  bin_type& operator*() noexcept { return static_cast<bin_type&>(*this); }
-
-  weight_type wsum;
-  long unsigned nent = 0;
-  static long unsigned id, prev_id;
-
-  nlo_bin& operator++() noexcept {
-    if (nent==0) [[unlikely]] { prev_id = id; }
-    if (id == prev_id) ++wsum;
-    else {
+  nlo_mc_multibin(): ww2(weight.size()), wsum(weight.size()) { }
+  nlo_mc_multibin& operator++() noexcept {
+    if (nent==0) [[unlikely]] {
       prev_id = id;
-      (**this) += wsum;
-      wsum = 1;
+      ++n;
+    }
+    if (prev_id != id) [[likely]] {
+      prev_id = id;
+      for (unsigned i=0, n=weight.size(); i<n; ++i) {
+        auto& w = wsum[i];
+        ww2[i] += w;
+        w = weight[i];
+      }
+      ++n;
+    } else {
+      for (unsigned i=0, n=weight.size(); i<n; ++i)
+        wsum[i] += weight[i];
     }
     ++nent;
     return *this;
   }
-  nlo_bin& operator+=(const auto& weight) noexcept {
-    if (nent==0) [[unlikely]] { prev_id = id; }
-    if (id == prev_id) wsum += weight;
-    else {
-      prev_id = id;
-      (**this) += wsum;
-      wsum = weight;
+  nlo_mc_multibin& finalize() noexcept {
+    for (unsigned i=0, n=weight.size(); i<n; ++i) {
+      auto& w = wsum[i];
+      ww2[i] += w;
+      w = 0;
     }
-    ++nent;
-    return *this;
-  }
-  nlo_bin& finalize() noexcept {
-    (**this) += wsum;
-    wsum = 0;
-    return *this;
-  }
-  nlo_bin& operator+=(const nlo_bin<auto,auto>& o) noexcept {
-    if (wsum!=0) finalize();
-    if (o.wsum!=0) (**this) += o.wsum;
-    (**this) += o.bin;
-    nent += o.nent;
     return *this;
   }
 };
-
-// ==================================================================
-
-using mc_bin = counted_bin< static_weight_bin< ww2_bin<double> > >;
-
-using nlo_mc_bin = nlo_bin<mc_bin>;
-
-using nlo_mc_multibin =
-  nlo_bin<
-    counted_bin< static_weight_bin<
-      multi_bin< std::vector<ww2_bin<double>> >,
-      multi_bin< std::vector<double> >
-    > >,
-    multi_bin< std::vector<double> >
-  >;
 
 } // end namespace ivanp::hist
 
