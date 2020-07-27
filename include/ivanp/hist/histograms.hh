@@ -21,6 +21,14 @@ inline decltype(auto) at(C&& xs, I i) {
 }
 
 template <map::Container C>
+auto size(const C& c) noexcept {
+  if constexpr (map::Tuple<C>)
+    return std::tuple_size<C>::value;
+  else
+    return std::size(c);
+}
+
+template <map::Container C>
 [[nodiscard]]
 inline decltype(auto) first(C&& c) {
   if constexpr (map::Tuple<C>)
@@ -212,12 +220,7 @@ public:
   template <size_t I>
   const auto& axis() const noexcept { return std::get<I>(axes); }
   const auto& axis(index_type i) const noexcept { return cont::at(axes,i); }
-  auto ndim() const noexcept {
-    if constexpr (map::Tuple<axes_type>)
-      return std::tuple_size<axes_type>::value;
-    else
-      return std::size(_axes);
-  }
+  auto ndim() const noexcept { return cont::size(_axes); }
 
   const bins_container_type& bins() const noexcept { return _bins; }
   bins_container_type& bins() noexcept { return _bins; }
