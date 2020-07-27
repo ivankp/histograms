@@ -136,6 +136,7 @@ public:
     return find_bin_index(x);
   }
 
+  list_type& edges() noexcept { return _edges; }
   const list_type& edges() const noexcept { return _edges; }
 };
 
