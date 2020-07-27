@@ -409,7 +409,7 @@ struct py_hist {
     }
 
     PyObject* bin = h([&]{
-        const unsigned n = h.naxes();
+        const unsigned n = h.ndim();
         std::vector<edge_type> coords(n);
         unsigned i = 0;
         for (; arg; ++i) {
@@ -430,7 +430,7 @@ struct py_hist {
   PyObject* operator[](PyObject* args) {
     PyObject* bin;
     if (auto iter = get_iter(args)) { // multiple args
-      const unsigned n = h.naxes();
+      const unsigned n = h.ndim();
       unsigned i = 0;
       std::vector<index_type> ii(n);
       auto arg = get_next(iter);
@@ -505,8 +505,8 @@ PyMethodDef hist_methods[] {
         return axis;
       } catch(...) { lipp(); return nullptr; }
     }, METH_O, "axis at given index" },
-  { "naxes", (PyCFunction) +[](py_hist* self) noexcept {
-      return py(self->h.naxes());
+  { "ndim", (PyCFunction) +[](py_hist* self) noexcept {
+      return py(self->h.ndim());
     }, METH_NOARGS, "number of axes" },
   { "size", (PyCFunction) +[](py_hist* self) noexcept {
       return py(self->h.size());
@@ -515,7 +515,7 @@ PyMethodDef hist_methods[] {
     -> PyObject* {
       try {
         return py( self->h.join_index( map_py_args(
-          args, unpy_check<index_type>, self->h.naxes()
+          args, unpy_check<index_type>, self->h.ndim()
         )));
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "compute global bin index" },
@@ -523,7 +523,7 @@ PyMethodDef hist_methods[] {
     -> PyObject* {
       try {
         return self->h.bin_at( map_py_args(
-          args, unpy_check<index_type>, self->h.naxes()
+          args, unpy_check<index_type>, self->h.ndim()
         ));
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "bin at given indices" },
@@ -531,7 +531,7 @@ PyMethodDef hist_methods[] {
     -> PyObject* {
       try {
         return py( self->h.find_bin_index( map_py_args(
-          args, unpy_check<edge_type>, self->h.naxes()
+          args, unpy_check<edge_type>, self->h.ndim()
         )));
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "bin index from coordinates" },
@@ -539,7 +539,7 @@ PyMethodDef hist_methods[] {
     -> PyObject* {
       try {
         return self->h.find_bin( map_py_args(
-          args, unpy_check<edge_type>, self->h.naxes()
+          args, unpy_check<edge_type>, self->h.ndim()
         ));
       } catch(...) { lipp(); return nullptr; }
     }, METH_VARARGS, "bin at given coordinates" },
@@ -577,7 +577,7 @@ PyMethodDef hist_methods[] {
         }
 
         PyObject* bin = self->h.fill_at([&]{
-          const unsigned n = self->h.naxes();
+          const unsigned n = self->h.ndim();
           std::vector<index_type> ii(n);
           unsigned i = 0;
           for (; arg; ++i) {
@@ -604,7 +604,7 @@ PyMethodDef hist_methods[] {
       t[0] = py(reinterpret_cast<PyTypeObject*>(&hist_py_type));
 
       std::copy(h.axes().begin(),h.axes().end(),
-        tuple_items(( t[1] = PyTuple_New(h.naxes()) )) );
+        tuple_items(( t[1] = PyTuple_New(h.ndim()) )) );
       h.axes() | [](PyObject* p) noexcept { Py_INCREF(p); };
 
       std::copy(h.begin(),h.end(),

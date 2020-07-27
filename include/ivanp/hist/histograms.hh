@@ -177,7 +177,7 @@ public:
   template <size_t I>
   const auto& axis() const noexcept { return std::get<I>(axes); }
   const auto& axis(index_type i) const noexcept { return cont::at(axes,i); }
-  auto naxes() const noexcept {
+  auto ndim() const noexcept {
     if constexpr (map::Tuple<axes_type>)
       return std::tuple_size<axes_type>::value;
     else

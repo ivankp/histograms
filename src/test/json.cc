@@ -20,7 +20,7 @@ using namespace std::string_literals;
 // using namespace ivanp::hist;
 
 int main(int argc, char* argv[]) {
-  ivanp::hist::histogram<ivanp::hist::mc_bin> h({{1,2,3}});
+  ivanp::hist::histogram<ivanp::hist::mc_bin<>> h({{1,2,3}});
   std::map hs {
     std::pair{"h1"s, &h},
     {"h2"s, &h}
