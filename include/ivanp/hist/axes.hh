@@ -47,16 +47,16 @@ template <typename Edge, bool Poly>
 using axis_base_t = std::conditional_t<
   Poly, poly_axis_base<Edge>, axis_base<Edge> >;
 
-template <typename A, typename Edge>
+template <typename A, typename Edge=void>
 concept Axis = requires (A a) {
   { a.nedges()                             } -> convertible_to<index_type>;
   { a.nbins()                              } -> convertible_to<index_type>;
   { a.find_bin_index(std::declval<Edge>()) } -> convertible_to<index_type>;
-  { a.edge(std::declval<index_type>())     } -> convertible_to<Edge>;
-  { a.min()                                } -> convertible_to<Edge>;
-  { a.max()                                } -> convertible_to<Edge>;
-  { a.lower(std::declval<index_type>())    } -> convertible_to<Edge>;
-  { a.upper(std::declval<index_type>())    } -> convertible_to<Edge>;
+  { a.edge(std::declval<index_type>())     } -> convertible_to_or_any<Edge>;
+  { a.min()                                } -> convertible_to_or_any<Edge>;
+  { a.max()                                } -> convertible_to_or_any<Edge>;
+  { a.lower(std::declval<index_type>())    } -> convertible_to_or_any<Edge>;
+  { a.upper(std::declval<index_type>())    } -> convertible_to_or_any<Edge>;
   typename A::edge_type;
 };
 

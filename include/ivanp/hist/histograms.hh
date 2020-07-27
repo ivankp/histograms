@@ -22,12 +22,25 @@ inline decltype(auto) at(C&& xs, I i) {
 
 template <map::Container C>
 [[nodiscard]]
+inline decltype(auto) first(C&& c) {
+  if constexpr (map::Tuple<C>)
+    return std::get<0>(std::forward<C>(c));
+  else
+    return *(std::begin(std::forward<C>(c)));
+}
+template <map::Container C>
+[[nodiscard]]
 inline decltype(auto) last(C&& c) {
   if constexpr (map::Tuple<C>)
     return std::get<std::tuple_size_v<C>-1>(std::forward<C>(c));
   else
     return *(std::begin(std::forward<C>(c))+(std::size(c)-1));
 }
+
+template <map::Container C>
+using first_type = std::decay_t<decltype(first(std::declval<C&>()))>;
+template <map::Container C>
+using last_type = std::decay_t<decltype(last(std::declval<C&>()))>;
 
 }
 
@@ -83,32 +96,46 @@ using axis_edge_type = typename std::remove_reference_t<
     decltype(axis_ref(std::declval<Axis&>()))
   >::edge_type;
 
-template <typename Axes>
+template <typename Axes, bool perbin_axes>
 struct coord_arg { };
 
 template <typename Axes>
 requires requires { typename Axes::value_type; }
-struct coord_arg<Axes> {
+struct coord_arg<Axes,false> {
   using type = std::initializer_list<
     axis_edge_type<typename Axes::value_type> >;
 };
+template <typename Axes>
+requires requires { typename Axes::value_type; }
+struct coord_arg<Axes,true> {
+  using type = std::initializer_list<
+    axis_edge_type<cont::first_type<typename Axes::value_type>> >;
+};
 
 template <typename... Axes>
-struct coord_arg<std::tuple<Axes...>> {
+struct coord_arg<std::tuple<Axes...>,false> {
   using type = std::tuple<axis_edge_type<Axes>...>;
+};
+template <typename... Axes>
+struct coord_arg<std::tuple<Axes...>,true> {
+  using type = std::tuple<axis_edge_type<cont::first_type<Axes>>...>;
 };
 
 template <typename Axes, size_t N>
-struct coord_arg<std::array<Axes,N>> {
+struct coord_arg<std::array<Axes,N>,false> {
   using type = std::array<axis_edge_type<Axes>,N>;
 };
+template <typename Axes, size_t N>
+struct coord_arg<std::array<Axes,N>,true> {
+  using type = std::array<axis_edge_type<cont::first_type<Axes>>,N>;
+};
 
-template <typename Axes>
-using coord_arg_t = typename coord_arg<Axes>::type;
+template <typename Axes, bool perbin_axes>
+using coord_arg_t = typename coord_arg<Axes,perbin_axes>::type;
 
-template <typename Axes>
+template <typename Axes, bool perbin_axes>
 concept ValidCoordArg = requires {
-  typename coord_arg<Axes>::type;
+  typename coord_arg<Axes,perbin_axes>::type;
 };
 
 } // end namespace detail
@@ -341,23 +368,23 @@ public:
   // https://stackoverflow.com/q/60909588/2640636
 
   template <typename... Args,
-    typename Coords = detail::coord_arg_t<head_t<Axes,Args...>> >
+    typename Coords = detail::coord_arg_t<head_t<Axes,Args...>,perbin_axes> >
   decltype(auto) fill(const head_t<Coords>& xs, Args&&... args) {
     return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
   }
   template <typename... Args,
-    typename Coords = detail::coord_arg_t<head_t<Axes,Args...>> >
+    typename Coords = detail::coord_arg_t<head_t<Axes,Args...>,perbin_axes> >
   decltype(auto) operator()(const head_t<Coords>& xs, Args&&... args) {
     return fill(xs,std::forward<Args>(args)...);
   }
 
   template <typename Coord, typename... Args>
-  requires (!detail::ValidCoordArg<Axes>)
+  requires (!detail::ValidCoordArg<Axes,perbin_axes>)
   decltype(auto) fill(std::initializer_list<Coord> xs, Args&&... args) {
     return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
   }
   template <typename Coord, typename... Args>
-  requires (!detail::ValidCoordArg<Axes>)
+  requires (!detail::ValidCoordArg<Axes,perbin_axes>)
   decltype(auto) operator()(std::initializer_list<Coord> xs, Args&&... args) {
     return fill(xs,std::forward<Args>(args)...);
   }
