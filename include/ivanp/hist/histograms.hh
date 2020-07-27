@@ -203,8 +203,8 @@ public:
   histogram& operator=(histogram&&) = default;
   ~histogram() = default;
 
-  histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
-  histogram(axes_type&& axes)
+  explicit histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
+  explicit histogram(axes_type&& axes)
   noexcept(std::is_nothrow_move_constructible_v<axes_type>)
   : _axes(std::move(axes)) { resize_bins(); }
 
