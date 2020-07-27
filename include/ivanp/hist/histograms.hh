@@ -171,17 +171,25 @@ private:
     if constexpr (
       requires (index_type n) { _bins.resize(n); }
     ) {
-      index_type n;
+      index_type n = 1;
       if constexpr (!perbin_axes) {
-        n = 1;
         map::map([&n](const auto& a) {
           n *= detail::axis_ref(a).nedges()+1;
         }, _axes);
       } else {
-        n = 0;
-        map::map([&n](const auto& a) {
-          n += detail::axis_ref(a).nedges()+1;
-        }, ivanp::cont::last(_axes));
+        map::map([&]<typename D>(const D& dim) {
+          static_assert(map::List<D>,
+            "cannot use perbin_axes with non-iterable axis containers");
+          const index_type
+            na = std::size(dim),
+            j  = n < na ? n : na-1,
+            dj = n - j;
+          n = 0;
+          auto it = std::begin(dim);
+          for (index_type k = 0; k<j; ++k, ++it)
+            n += detail::axis_ref(*it).nedges()+1;
+          n += dj * (detail::axis_ref(*it).nedges()+1);
+        }, _axes);
       }
       _bins.resize(n);
     }
@@ -219,6 +227,7 @@ public:
     else
       return std::size(_bins);
   }
+  auto nbins() const noexcept { return size(); }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }

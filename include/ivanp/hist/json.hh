@@ -46,18 +46,29 @@ concept HistogramDict = requires (T& hs) {
 };
 
 nlohmann::json to_json(const HistogramDict auto& hs) {
+  using hist_t = std::decay_t<decltype(*std::get<1>(*hs.begin()))>;
   using nlohmann::json;
   json axes  = json::array(),
        bins  = json::array(),
        hists = json::object();
   for (const auto& [name, h_ptr] : hs) {
     auto& h = hists[name] = *h_ptr;
-    for (auto& ha : h["axes"]) {
-      unsigned i = 0, n = axes.size();
-      for (; i<n; ++i)
-        if (ha == axes[i]) break;
-      if (i==n) axes.push_back(std::move(ha));
-      ha = i;
+    for (auto& a : h["axes"]) {
+      if constexpr (!hist_t::perbin_axes) {
+        unsigned i = 0, n = axes.size();
+        for (; i<n; ++i)
+          if (a == axes[i]) break;
+        if (i==n) axes.push_back(std::move(a));
+        a = i;
+      } else {
+        for (auto& a : a) {
+          unsigned i = 0, n = axes.size();
+          for (; i<n; ++i)
+            if (a == axes[i]) break;
+          if (i==n) axes.push_back(std::move(a));
+          a = i;
+        }
+      }
     }
     auto& hbins = h["bins"];
     if (hbins.size()==2 && hbins[0].is_array()) {
