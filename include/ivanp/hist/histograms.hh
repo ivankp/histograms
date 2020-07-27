@@ -11,6 +11,26 @@
 #include <ivanp/hist/bin_filler.hh>
 #include <ivanp/map/map.hh>
 
+namespace ivanp::cont {
+
+template <typename C, typename I>
+[[nodiscard, gnu::always_inline]]
+inline decltype(auto) at(C&& xs, I i) {
+  if constexpr (requires { xs[i]; }) return xs[i];
+  else if constexpr (requires { xs.at(i); }) return xs.at(i);
+}
+
+template <map::Container C>
+[[nodiscard]]
+inline decltype(auto) last(C&& c) {
+  if constexpr (map::Tuple<C>)
+    return std::get<std::tuple_size_v<C>-1>(std::forward<C>(c));
+  else
+    return *(std::begin(std::forward<C>(c))+(std::size(c)-1));
+}
+
+}
+
 namespace ivanp::hist {
 
 template <typename> struct bins_container_spec { };
@@ -33,6 +53,19 @@ struct is_filler_spec<filler_spec<T>> {
   using type = T;
 };
 
+template <bool B>
+struct perbin_axes_spec {
+  static constexpr bool value = B;
+};
+template <typename> struct is_perbin_axes_spec {
+  static constexpr bool value = false;
+};
+template <bool B>
+struct is_perbin_axes_spec<perbin_axes_spec<B>> {
+  static constexpr bool value = true;
+  using type = perbin_axes_spec<B>;
+};
+
 namespace detail {
 
 template <typename Axis>
@@ -44,13 +77,6 @@ template <typename Axis>
 requires requires (Axis& a) { a->nedges(); }
 [[nodiscard, gnu::const, gnu::always_inline]]
 inline auto& axis_ref(Axis& x) { return axis_ref(*x); }
-
-template <typename C, typename I>
-[[nodiscard, gnu::always_inline]]
-inline decltype(auto) at(C&& xs, I i) {
-  if constexpr (requires { xs[i]; }) return xs[i];
-  else if constexpr (requires { xs.at(i); }) return xs.at(i);
-}
 
 template <typename Axis>
 using axis_edge_type = typename std::remove_reference_t<
@@ -85,7 +111,7 @@ concept ValidCoordArg = requires {
   typename coord_arg<Axes>::type;
 };
 
-}
+} // end namespace detail
 
 template <
   typename Bin = double,
@@ -94,6 +120,7 @@ template <
 >
 class histogram {
 public:
+  using index_type = hist::index_type;
   using bin_type = Bin;
   using axes_type = Axes;
   using bins_container_type = typename std::disjunction<
@@ -104,7 +131,10 @@ public:
     is_filler_spec<Specs>...,
     is_filler_spec<filler_spec< bin_filler >>
   >::type;
-  using index_type = hist::index_type;
+  static constexpr bool perbin_axes = std::disjunction<
+    is_perbin_axes_spec<Specs>...,
+    is_perbin_axes_spec<perbin_axes_spec< false >>
+  >::type::value;
 
 private:
   axes_type _axes;
@@ -114,10 +144,18 @@ private:
     if constexpr (
       requires (index_type n) { _bins.resize(n); }
     ) {
-      index_type n = 1;
-      map::map([&n](const auto& a) {
-        n *= detail::axis_ref(a).nedges()+1;
-      }, _axes);
+      index_type n;
+      if constexpr (!perbin_axes) {
+        n = 1;
+        map::map([&n](const auto& a) {
+          n *= detail::axis_ref(a).nedges()+1;
+        }, _axes);
+      } else {
+        n = 0;
+        map::map([&n](const auto& a) {
+          n += detail::axis_ref(a).nedges()+1;
+        }, ivanp::cont::last(_axes));
+      }
       _bins.resize(n);
     }
   }
@@ -138,7 +176,7 @@ public:
   const axes_type& axes() const noexcept { return _axes; }
   template <size_t I>
   const auto& axis() const noexcept { return std::get<I>(axes); }
-  const auto& axis(index_type i) const noexcept { return detail::at(axes,i); }
+  const auto& axis(index_type i) const noexcept { return cont::at(axes,i); }
   auto naxes() const noexcept {
     if constexpr (map::Tuple<axes_type>)
       return std::tuple_size<axes_type>::value;
@@ -167,11 +205,28 @@ public:
   template <typename T = std::initializer_list<index_type>>
   requires map::Container<T>
   index_type join_index(const T& ii) const {
-    index_type index = 0, n = 1;
-    map::map([&](index_type i, const auto& a) {
-      index += i*n;
-      n *= detail::axis_ref(a).nedges()+1;
-    }, ii, _axes);
+    // N = (a*nb + b)*nc + c
+    index_type index = 0;
+    if constexpr (!perbin_axes) {
+      map::map([&](index_type i, const auto& a) {
+        (index *= detail::axis_ref(a).nedges()+1) += i;
+      }, ii, _axes);
+    } else {
+      map::map([&]<typename D>(index_type i, const D& dim) {
+        static_assert(map::List<D>,
+          "cannot use perbin_axes with non-iterable axis containers");
+        const index_type
+          nd = std::size(dim),
+          j  = index < nd ? index : nd-1,
+          dj = index - j;
+        index = 0;
+        auto it = std::begin(dim);
+        for (index_type k = 0; k<j; ++k, ++it)
+          index += detail::axis_ref(*it).nedges()+1;
+        const auto& a = detail::axis_ref(*it);
+        index += (dj * (a.nedges()+1)) + i;
+      }, ii, _axes);
+    }
     return index;
   }
 
@@ -181,8 +236,8 @@ public:
     return join_index(std::array<index_type,sizeof...(I)>{index_type(i)...});
   }
 
-  const bin_type& bin_at(index_type i) const { return detail::at(_bins,i); }
-  bin_type& bin_at(index_type i) { return detail::at(_bins,i); }
+  const bin_type& bin_at(index_type i) const { return cont::at(_bins,i); }
+  bin_type& bin_at(index_type i) { return cont::at(_bins,i); }
 
   const bin_type& bin_at(std::initializer_list<index_type> ii) const {
     return bin_at(join_index(ii));
@@ -219,11 +274,29 @@ public:
   // ----------------------------------------------------------------
 
   index_type find_bin_index(const map::Container auto& xs) const {
-    index_type index = 0, n = 1;
-    map::map([&](const auto& x, const auto& a) {
-      index += detail::axis_ref(a).find_bin_index(x)*n;
-      n *= detail::axis_ref(a).nedges()+1;
-    }, xs, _axes);
+    // N = (a*nb + b)*nc + c
+    index_type index = 0;
+    if constexpr (!perbin_axes) {
+      map::map([&](const auto& x, const auto& _a) {
+        const auto& a = detail::axis_ref(_a);
+        (index *= a.nedges()+1) += a.find_bin_index(x);
+      }, xs, _axes);
+    } else {
+      map::map([&]<typename D>(const auto& x, const D& dim) {
+        static_assert(map::List<D>,
+          "cannot use perbin_axes with non-iterable axis containers");
+        const index_type
+          nd = std::size(dim),
+          j  = index < nd ? index : nd-1,
+          dj = index - j;
+        index = 0;
+        auto it = std::begin(dim);
+        for (index_type k = 0; k<j; ++k, ++it)
+          index += detail::axis_ref(*it).nedges()+1;
+        const auto& a = detail::axis_ref(*it);
+        index += (dj * (a.nedges()+1)) + a.find_bin_index(x);
+      }, xs, _axes);
+    }
     return index;
   }
 
