@@ -14,7 +14,7 @@ namespace ivanp::hist {
 
 template <typename>
 struct bin_def {
-  static const char* str();
+  static nlohmann::json def() noexcept { return nullptr; }
 };
 
 template <typename List, bool Poly, typename Edge>
@@ -26,18 +26,8 @@ template <Histogram H>
 void to_json(nlohmann::json& j, const H& h) {
   j = { {"axes", h.axes()} };
   using bin_type = typename H::bin_type;
-  auto& bins = j["bins"];
-  if constexpr (std::is_arithmetic_v<bin_type>)
-    bins = h.bins();
-  else
-    bins = { nlohmann::json::parse(bin_def<bin_type>::str()), h.bins() };
+  j["bins"] = { bin_def<bin_type>::def(), h.bins() };
 }
-
-// void from_json(const json& j, Histogram auto& h) {
-//   j.at("name").get_to(p.name);
-//   j.at("address").get_to(p.address);
-//   j.at("age").get_to(p.age);
-// }
 
 template <typename T>
 concept HistogramDict = requires (T& hs) {
@@ -70,9 +60,8 @@ nlohmann::json to_json(const HistogramDict auto& hs) {
         }
       }
     }
-    auto& hbins = h["bins"];
-    if (hbins.size()==2 && hbins[0].is_array()) {
-      auto& hb = hbins[0];
+    auto& hb = h["bins"][0];
+    if (!hb.is_null()) {
       unsigned i = 0, n = bins.size();
       for (; i<n; ++i)
         if (hb == bins[i]) break;
@@ -94,8 +83,8 @@ void to_json(nlohmann::json& j, const ww2_bin<auto>& b) {
 }
 template <typename T>
 struct bin_def<ww2_bin<T>> {
-  static constexpr const char* str() noexcept {
-    return R"(["w","w2"])";
+  static nlohmann::json def() noexcept {
+    return R"(["w","w2"])"_json;
   }
 };
 
@@ -104,20 +93,14 @@ void to_json(nlohmann::json& j, const mc_bin<auto,auto>& b) {
 }
 template <typename T, typename C>
 struct bin_def<mc_bin<T,C>> {
-  static constexpr const char* str() noexcept {
-    return R"(["w","w2","n"])";
+  static nlohmann::json def() noexcept {
+    return R"(["w","w2","n"])"_json;
   }
 };
 
 void to_json(nlohmann::json& j, const nlo_mc_multibin& b) {
   j = { b.ww2, b.n, b.nent };
 }
-template <>
-struct bin_def<nlo_mc_multibin> {
-  static constexpr const char* str() noexcept {
-    return R"(null)";
-  }
-};
 
 #endif
 
