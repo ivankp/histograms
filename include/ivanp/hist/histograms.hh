@@ -7,102 +7,27 @@
 #include <vector>
 #include <string>
 
+#include <ivanp/cont/general.hh>
+#include <ivanp/cont/map.hh>
+#include <ivanp/enum_class_bitmask.hh>
 #include <ivanp/hist/axes.hh>
 #include <ivanp/hist/bin_filler.hh>
-#include <ivanp/map/map.hh>
 
-namespace ivanp::cont {
-
-template <typename C, typename I>
-[[nodiscard, gnu::always_inline]]
-inline decltype(auto) at(C&& xs, I i) {
-  if constexpr (requires { xs[i]; }) return xs[i];
-  else if constexpr (requires { xs.at(i); }) return xs.at(i);
+namespace ivanp::hist {
+enum class hist_flags {
+  none = 0,
+  perbin_axes = 1 << 0,
+};
 }
 
-template <map::Container C>
-auto size(const C& c) noexcept {
-  if constexpr (map::Tuple<C>)
-    return std::tuple_size<C>::value;
-  else
-    return std::size(c);
-}
-
-template <map::Container C>
-[[nodiscard]]
-inline decltype(auto) first(C&& c) {
-  if constexpr (map::Tuple<C>)
-    return std::get<0>(std::forward<C>(c));
-  else
-    return *(std::begin(std::forward<C>(c)));
-}
-template <map::Container C>
-[[nodiscard]]
-inline decltype(auto) last(C&& c) {
-  if constexpr (map::Tuple<C>)
-    return std::get<std::tuple_size_v<C>-1>(std::forward<C>(c));
-  else
-    return *(std::begin(std::forward<C>(c))+(std::size(c)-1));
-}
-
-template <map::Container C>
-using first_type = std::decay_t<decltype(first(std::declval<C&>()))>;
-template <map::Container C>
-using last_type = std::decay_t<decltype(last(std::declval<C&>()))>;
-
+namespace ivanp {
+template <>
+constexpr bool enable_bitmask_operators<hist::hist_flags> = true;
 }
 
 namespace ivanp::hist {
 
-template <typename> struct bins_container_spec { };
-template <typename> struct is_bins_container_spec {
-  static constexpr bool value = false;
-};
-template <typename T>
-struct is_bins_container_spec<bins_container_spec<T>> {
-  static constexpr bool value = true;
-  using type = T;
-};
-
-template <typename> struct filler_spec { };
-template <typename> struct is_filler_spec {
-  static constexpr bool value = false;
-};
-template <typename T>
-struct is_filler_spec<filler_spec<T>> {
-  static constexpr bool value = true;
-  using type = T;
-};
-
-template <bool B>
-struct perbin_axes_spec {
-  static constexpr bool value = B;
-};
-template <typename> struct is_perbin_axes_spec {
-  static constexpr bool value = false;
-};
-template <bool B>
-struct is_perbin_axes_spec<perbin_axes_spec<B>> {
-  static constexpr bool value = true;
-  using type = perbin_axes_spec<B>;
-};
-
 namespace detail {
-
-template <typename Axis>
-requires requires (Axis& a) { a.nedges(); }
-[[nodiscard, gnu::const, gnu::always_inline]]
-inline auto& axis_ref(Axis& a) { return a; }
-
-template <typename Axis>
-requires requires (Axis& a) { a->nedges(); }
-[[nodiscard, gnu::const, gnu::always_inline]]
-inline auto& axis_ref(Axis& x) { return axis_ref(*x); }
-
-template <typename Axis>
-using axis_edge_type = typename std::remove_reference_t<
-    decltype(axis_ref(std::declval<Axis&>()))
-  >::edge_type;
 
 template <typename Axes, bool perbin_axes>
 struct coord_arg { };
@@ -148,32 +73,27 @@ concept ValidCoordArg = requires {
 
 } // end namespace detail
 
+namespace impl {
+
 template <
-  typename Bin = double,
-  typename Axes = std::vector<list_axis<std::vector<double>>>,
-  typename... Specs
+  typename Bin,
+  typename Axes,
+  typename Bins,
+  typename Filler,
+  hist_flags flags
 >
 class histogram {
 public:
   using index_type = hist::index_type;
   using bin_type = Bin;
   using axes_type = Axes;
-  using bins_container_type = typename std::disjunction<
-    is_bins_container_spec<Specs>...,
-    is_bins_container_spec<bins_container_spec< std::vector<bin_type> >>
-  >::type;
-  using filler_type = typename std::disjunction<
-    is_filler_spec<Specs>...,
-    is_filler_spec<filler_spec< bin_filler >>
-  >::type;
-  static constexpr bool perbin_axes = std::disjunction<
-    is_perbin_axes_spec<Specs>...,
-    is_perbin_axes_spec<perbin_axes_spec< false >>
-  >::type::value;
+  using bins_type = Bins;
+  using filler_type = Filler;
+  static constexpr bool perbin_axes = !!(flags & hist_flags::perbin_axes);
 
 private:
   axes_type _axes;
-  bins_container_type _bins;
+  bins_type _bins;
 
   void resize_bins() {
     if constexpr (
@@ -181,12 +101,12 @@ private:
     ) {
       index_type n = 1;
       if constexpr (!perbin_axes) {
-        map::map([&n](const auto& a) {
-          n *= detail::axis_ref(a).nedges()+1;
+        cont::map([&n](const auto& a) {
+          n *= get_axis_ref(a).nbins();
         }, _axes);
       } else {
-        map::map([&]<typename D>(const D& dim) {
-          static_assert(map::List<D>,
+        cont::map([&]<typename D>(const D& dim) {
+          static_assert(cont::List<D>,
             "cannot use perbin_axes with non-iterable axis containers");
           const index_type
             na = std::size(dim),
@@ -195,8 +115,8 @@ private:
           n = 0;
           auto it = std::begin(dim);
           for (index_type k = 0; k<j; ++k, ++it)
-            n += detail::axis_ref(*it).nedges()+1;
-          n += dj * (detail::axis_ref(*it).nedges()+1);
+            n += get_axis_ref(*it).nbins();
+          n += dj * (get_axis_ref(*it).nbins());
         }, _axes);
       }
       _bins.resize(n);
@@ -218,19 +138,14 @@ public:
 
   const axes_type& axes() const noexcept { return _axes; }
   template <size_t I>
-  const auto& axis() const noexcept { return std::get<I>(axes); }
-  const auto& axis(index_type i) const noexcept { return cont::at(axes,i); }
+  const auto& axis() const noexcept { return std::get<I>(_axes); }
+  const auto& axis(index_type i) const noexcept { return cont::at(_axes,i); }
   auto ndim() const noexcept { return cont::size(_axes); }
 
-  const bins_container_type& bins() const noexcept { return _bins; }
-  bins_container_type& bins() noexcept { return _bins; }
-  auto size() const noexcept {
-    if constexpr (map::Tuple<bins_container_type>)
-      return std::tuple_size<bins_container_type>::value;
-    else
-      return std::size(_bins);
-  }
-  auto nbins() const noexcept { return size(); }
+  const bins_type& bins() const noexcept { return _bins; }
+  bins_type& bins() noexcept { return _bins; }
+  auto nbins() const noexcept { return cont::size(_bins); }
+  auto size() const noexcept { return cont::size(_bins); }
 
   auto begin() const noexcept { return _bins.begin(); }
   auto begin() noexcept { return _bins.begin(); }
@@ -242,17 +157,17 @@ public:
   index_type join_index(index_type i) const { return i; }
 
   template <typename T = std::initializer_list<index_type>>
-  requires map::Container<T>
+  requires cont::Container<T>
   index_type join_index(const T& ii) const {
     // N = (a*nb + b)*nc + c
     index_type index = 0;
     if constexpr (!perbin_axes) {
-      map::map([&](index_type i, const auto& a) {
-        (index *= detail::axis_ref(a).nedges()+1) += i;
+      cont::map([&](index_type i, const auto& a) {
+        (index *= get_axis_ref(a).nbins()) += i;
       }, ii, _axes);
     } else {
-      map::map([&]<typename D>(index_type i, const D& dim) {
-        static_assert(map::List<D>,
+      cont::map([&]<typename D>(index_type i, const D& dim) {
+        static_assert(cont::List<D>,
           "cannot use perbin_axes with non-iterable axis containers");
         const index_type
           nd = std::size(dim),
@@ -261,9 +176,9 @@ public:
         index = 0;
         auto it = std::begin(dim);
         for (index_type k = 0; k<j; ++k, ++it)
-          index += detail::axis_ref(*it).nedges()+1;
-        const auto& a = detail::axis_ref(*it);
-        index += (dj * (a.nedges()+1)) + i;
+          index += get_axis_ref(*it).nbins();
+        const auto& a = get_axis_ref(*it);
+        index += (dj * (a.nbins())) + i;
       }, ii, _axes);
     }
     return index;
@@ -296,7 +211,7 @@ public:
   template <typename T = std::initializer_list<index_type>>
   const bin_type& operator[](const T& ii) const {
     const index_type i = join_index(ii);
-    if constexpr (map::Sizable<bins_container_type>)
+    if constexpr (cont::Sizable<bins_type>)
       if (i >= _bins.size()) [[unlikely]]
         throw std::out_of_range("histogram bin index out of bound");
     return bin_at(i);
@@ -304,7 +219,7 @@ public:
   template <typename T = std::initializer_list<index_type>>
   bin_type& operator[](const T& ii) {
     const index_type i = join_index(ii);
-    if constexpr (map::Sizable<bins_container_type>)
+    if constexpr (cont::Sizable<bins_type>)
       if (i >= _bins.size()) [[unlikely]]
         throw std::out_of_range("histogram bin index out of bound");
     return bin_at(i);
@@ -312,17 +227,17 @@ public:
 
   // ----------------------------------------------------------------
 
-  index_type find_bin_index(const map::Container auto& xs) const {
+  index_type find_bin_index(const cont::Container auto& xs) const {
     // N = (a*nb + b)*nc + c
     index_type index = 0;
     if constexpr (!perbin_axes) {
-      map::map([&](const auto& x, const auto& _a) {
-        const auto& a = detail::axis_ref(_a);
-        (index *= a.nedges()+1) += a.find_bin_index(x);
+      cont::map([&](const auto& x, const auto& _a) {
+        const auto& a = get_axis_ref(_a);
+        (index *= a.nbins()) += a.find_bin_index(x);
       }, xs, _axes);
     } else {
-      map::map([&]<typename D>(const auto& x, const D& dim) {
-        static_assert(map::List<D>,
+      cont::map([&]<typename D>(const auto& x, const D& dim) {
+        static_assert(cont::List<D>,
           "cannot use perbin_axes with non-iterable axis containers");
         const index_type
           nd = std::size(dim),
@@ -331,16 +246,16 @@ public:
         index = 0;
         auto it = std::begin(dim);
         for (index_type k = 0; k<j; ++k, ++it)
-          index += detail::axis_ref(*it).nedges()+1;
-        const auto& a = detail::axis_ref(*it);
-        index += (dj * (a.nedges()+1)) + a.find_bin_index(x);
+          index += get_axis_ref(*it).nbins();
+        const auto& a = get_axis_ref(*it);
+        index += (dj * (a.nbins())) + a.find_bin_index(x);
       }, xs, _axes);
     }
     return index;
   }
 
   template <typename... T>
-  requires (sizeof...(T) != 1) || (!map::Container<head_t<T...>>)
+  requires (sizeof...(T) != 1) || (!cont::Container<head_t<T...>>)
   index_type find_bin_index(const T&... xs) const {
     return find_bin_index(std::forward_as_tuple(xs...));
   }
@@ -366,7 +281,7 @@ public:
 
   template <typename Coords, typename... Args>
   decltype(auto) fill(const Coords& xs, Args&&... args) {
-    if constexpr (map::Container<Coords>)
+    if constexpr (cont::Container<Coords>)
       return filler_type::fill(find_bin(xs),std::forward<Args>(args)...);
     else
       return filler_type::fill(find_bin(xs,args...));
@@ -403,10 +318,76 @@ public:
 
 };
 
+} // end namespace impl
+
+template <typename> struct bins_spec { };
+template <typename> struct is_bins_spec {
+  static constexpr bool value = false;
+};
+template <typename T>
+struct is_bins_spec<bins_spec<T>> {
+  static constexpr bool value = true;
+  using type = T;
+};
+
+template <typename> struct axes_spec { };
+template <typename> struct is_axes_spec {
+  static constexpr bool value = false;
+};
+template <typename T>
+struct is_axes_spec<axes_spec<T>> {
+  static constexpr bool value = true;
+  using type = T;
+};
+
+template <typename> struct filler_spec { };
+template <typename> struct is_filler_spec {
+  static constexpr bool value = false;
+};
+template <typename T>
+struct is_filler_spec<filler_spec<T>> {
+  static constexpr bool value = true;
+  using type = T;
+};
+
+template <hist_flags... flags> struct flags_spec {
+  static constexpr hist_flags value = (hist_flags::none | ... | flags);
+};
+template <typename> struct is_flags_spec {
+  static constexpr bool value = false;
+  using type = flags_spec<>;
+};
+template <hist_flags... flags>
+struct is_flags_spec<flags_spec<flags...>> {
+  static constexpr bool value = true;
+  using type = flags_spec<flags...>;
+};
+
+template <typename Bin = double, typename... Specs>
+using histogram = impl::histogram<
+  Bin,
+  typename std::disjunction<
+    is_axes_spec<Specs>...,
+    is_axes_spec<axes_spec< std::vector<cont_axis<std::vector<double>>> >>
+  >::type,
+  typename std::disjunction<
+    is_bins_spec<Specs>...,
+    is_bins_spec<bins_spec< std::vector<Bin> >>
+  >::type,
+  typename std::disjunction<
+    is_filler_spec<Specs>...,
+    is_filler_spec<filler_spec< bin_filler >>
+  >::type,
+  ( hist_flags::none | ... | is_flags_spec<Specs>::type::value )
+>;
+
 template <typename>
 struct is_histogram: std::false_type { };
-template <typename Bin, typename Axes, typename... Specs>
-struct is_histogram<histogram<Bin,Axes,Specs...>>: std::true_type { };
+template <
+  typename Bin, typename Axes, typename Bins, typename Filler,
+  hist_flags flags >
+struct is_histogram<impl::histogram<Bin,Axes,Bins,Filler,flags>>
+: std::true_type { };
 
 template <typename T>
 concept Histogram = is_histogram<std::decay_t<T>>::value;

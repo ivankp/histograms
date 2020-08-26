@@ -18,7 +18,7 @@
 #include <python.hh>
 
 using namespace std::string_literals;
-using namespace ivanp::map::operators;
+using namespace ivanp::cont::ops::map;
 
 namespace ivanp::hist {
 namespace {
@@ -41,30 +41,26 @@ struct hist_py_type: PyTypeObject {
 struct py_axis {
   PyObject_HEAD // must not be overwritten in the constructor
 
-  using base_type = poly_axis_base<edge_type>;
-  using uniform_axis_type = uniform_axis<edge_type,true>;
-  using list_axis_type = list_axis<std::vector<edge_type>,true>;
+  using axis_type = variant_axis<
+    uniform_axis<edge_type>,
+    cont_axis<std::vector<edge_type>>
+  >;
+  axis_type axis;
 
-  std::aligned_union_t<0,uniform_axis_type,list_axis_type> buff;
-
-  base_type& operator*() noexcept {
-    return *reinterpret_cast<base_type*>(&buff);
-  }
-  const base_type& operator*() const noexcept {
-    return *reinterpret_cast<const base_type*>(&buff);
-  }
-  base_type* operator->() noexcept { return &**this; }
-  const base_type* operator->() const noexcept { return &**this; }
+  axis_type& operator*() noexcept { return axis; }
+  const axis_type& operator*() const noexcept { return axis; }
+  axis_type* operator->() noexcept { return &axis; }
+  const axis_type* operator->() const noexcept { return &axis; }
 
   [[noreturn]] static void uniform_args_error() {
     throw error(PyExc_ValueError,
       "uniform axis arguments must be of the form"
-      " [nbins,min,max] or [nbins,min,max,\"flags\"]");
+      " [ndiv,min,max] or [ndiv,min,max,\"flags\"]");
   }
 
   py_axis(PyObject* args, PyObject* kwargs) {
     std::vector<edge_type> edges;
-    index_type nbins = 0;
+    index_type ndiv = 0;
     edge_type min, max;
 
     auto iter = get_iter(args); // guaranteed tuple
@@ -74,27 +70,22 @@ struct py_axis {
     for (;;) { // loop over arguments
       TEST(arg->ob_type->tp_name)
       TEST(unpy<std::string_view>(PyObject_Str(arg)))
-      if (arg->ob_type == &axis_py_type) {
-        auto* ptr = &**py_cast<py_axis>(+arg);
-        if (auto* axis = dynamic_cast<
-          const py_axis::uniform_axis_type* >(ptr)
-        ) {
-          nbins = axis->nbins();
-          min = axis->min();
-          max = axis->max();
-        } else if (auto* axis = dynamic_cast<
-          const py_axis::list_axis_type* >(ptr)
-        ) {
-          auto& src = axis->edges();
+      if (arg->ob_type == &axis_py_type) { // argument is axis
+        auto* ptr = &***py_cast<py_axis>(+arg);
+        if (auto* ax = std::get_if<0>(ptr)) {
+          ndiv = ax->ndiv();
+          min = ax->min();
+          max = ax->max();
+        } else if (auto* ax = std::get_if<1>(ptr)) {
+          auto& src = ax->edges();
           edges.insert(edges.end(), src.begin(), src.end());
         }
-      } else
-      if (auto subiter = get_iter(arg)) { // uniform chunk
-        // strings are also iterable and will enter here
+      } else if (auto subiter = get_iter(arg)) { // uniform chunk
+        // Note: strings are also iterable and will enter here
 
         auto subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
-        unpy_check_to(nbins,subarg);
+        unpy_check_to(ndiv,subarg);
 
         subarg = get_next(subiter);
         if (!subarg) uniform_args_error();
@@ -122,27 +113,25 @@ struct py_axis {
 
       // set up for next iteration
       arg = get_next(iter);
-      if (nbins && (arg || !edges.empty())) {
-        const edge_type d = (max - min)/nbins;
-        edges.reserve(edges.size()+nbins+1);
-        for (index_type i=0; i<=nbins; ++i)
+      if (ndiv && (arg || !edges.empty())) {
+        const edge_type d = (max - min)/ndiv;
+        edges.reserve(edges.size()+ndiv+1);
+        for (index_type i=0; i<=ndiv; ++i)
           edges.push_back(min + i*d);
-        nbins = 0;
+        ndiv = 0;
       }
       if (!arg) break;
     }
 
     // make the axis
     if (edges.empty()) {
-      new (&**this) uniform_axis_type(nbins, min, max);
+      (*axis).emplace<0>(ndiv, min, max);
     } else {
       std::sort( begin(edges), end(edges) );
       edges.erase( std::unique( begin(edges), end(edges) ), end(edges) );
-      new (&**this) list_axis_type(std::move(edges));
+      (*axis).emplace<1>(std::move(edges));
     }
   }
-
-  ~py_axis() { (*this)->~base_type(); }
 
   PyObject* operator()(PyObject* args, PyObject* kwargs) const {
     auto iter = get_iter(args);
@@ -152,21 +141,20 @@ struct py_axis {
     if (!arg || get_next(iter)) throw error(PyExc_TypeError,
       "axis call expression takes exactly one argument");
 
-    return py((*this)->find_bin_index(unpy_check<edge_type>(arg)));
+    return py(axis.find_bin_index(unpy_check<edge_type>(arg)));
   }
 
   PyObject* str() const noexcept {
     std::stringstream ss;
-    if (auto* axis = dynamic_cast< const uniform_axis_type* >(&**this)) {
-      ss << "axis: { nbins: " << axis->nbins()
-                 << ", min: " << axis->min()
-                 << ", max: " << axis->max()
-                 << " }";
-    } else
-    if (auto* axis = dynamic_cast< const list_axis_type* >(&**this)) {
+    if (auto* ax = std::get_if<0>(&*axis)) {
+      ss << "axis: { ndiv: " << ax->ndiv()
+         << ", min: " << ax->min()
+         << ", max: " << ax->max()
+         << " }";
+    } else if (auto* ax = std::get_if<1>(&*axis)) {
       ss << "axis: [ ";
       bool first = true;
-      for (auto x : axis->edges()) {
+      for (auto x : ax->edges()) {
         if (first) first = false;
         else ss << ", ";
         ss << x;
@@ -180,15 +168,15 @@ struct py_axis {
 struct py_axis_iter {
   PyObject_HEAD // must not be overwritten in the constructor
 
-  using base_type = typename py_axis::base_type;
-  const base_type& axis;
+  using axis_type = typename py_axis::axis_type;
+  const axis_type& axis;
   index_type i;
 
   py_axis_iter(PyObject* args, PyObject* kwargs) noexcept
   : py_axis_iter( **py_cast<py_axis>( tuple_items(args)[0] ) )
   { }
 
-  py_axis_iter(base_type& axis) noexcept: axis(axis), i(0) { }
+  py_axis_iter(axis_type& axis) noexcept: axis(axis), i(0) { }
 };
 
 struct axis_iter_py_type: PyTypeObject {
@@ -210,6 +198,9 @@ struct axis_iter_py_type: PyTypeObject {
 PyMethodDef axis_methods[] {
   { "nbins", (PyCFunction) +[](py_axis* self) noexcept {
       return py((*self)->nbins());
+    }, METH_NOARGS, "number of axis bins not counting overflow" },
+  { "ndiv", (PyCFunction) +[](py_axis* self) noexcept {
+      return py((*self)->ndiv());
     }, METH_NOARGS, "number of axis bins not counting overflow" },
   { "nedges", (PyCFunction) +[](py_axis* self) noexcept {
       return py((*self)->nedges());
@@ -251,18 +242,15 @@ PyMethodDef axis_methods[] {
       PyObject* const tup = PyTuple_New(2);
       auto* const t = tuple_items(tup);
       t[0] = py(reinterpret_cast<PyTypeObject*>(&axis_py_type));
-      if (auto* axis = dynamic_cast<
-        const py_axis::uniform_axis_type* >(&**self)
-      ) {
+      if (auto* axis = std::get_if<0>(&***self)) {
         auto* x = tuple_items((
           tuple_items(( t[1] = PyTuple_New(1) ))[0] = PyTuple_New(3) ));
-        x[0] = py(axis->nbins());
+        x[0] = py(axis->ndiv());
         x[1] = py(axis->min());
         x[2] = py(axis->max());
-      } else if (auto* axis = dynamic_cast<
-        const py_axis::list_axis_type* >(&**self)
-      ) {
-        map::map<map::flags::no_size_check>([](auto& to, edge_type from){
+      } else if (auto* axis = std::get_if<1>(&***self)) {
+        using namespace ivanp::cont;
+        map<map_flags::no_size_check>([](auto& to, edge_type from){
           to = py(from);
         }, tuple_span(PyTuple_New(axis->nedges())), axis->edges());
       }
@@ -308,17 +296,17 @@ struct py_hist {
 
   struct axis_ptr: py_ptr {
     using py_ptr::py_ptr;
-    const py_axis::base_type& operator*() const noexcept {
+    const py_axis::axis_type& operator*() const noexcept {
       return **py_cast<py_axis>(p);
     }
-    const py_axis::base_type* operator->() const noexcept {
+    const py_axis::axis_type* operator->() const noexcept {
       return &**this;
     }
   };
 
   using hist = histogram<
     py_ptr,
-    std::vector<axis_ptr>,
+    axes_spec<std::vector<axis_ptr>>,
     filler_spec<py_bin_filler>
   >;
   hist h;
@@ -362,7 +350,8 @@ struct py_hist {
       if (const auto arg = py_dynamic_cast<py_hist>(
         tuple_items(args)[0], &hist_py_type
       )) {
-        map::map<map::flags::no_size_check>([](auto& to, auto& from){
+        using namespace ivanp::cont;
+        map<map_flags::no_size_check>([](auto& to, auto& from){
           auto* const ob_type = from->ob_type;
           if (ob_type == &PyFloat_Type || ob_type == &PyLong_Type)
             Py_INCREF((to = from));
@@ -616,7 +605,7 @@ PyMethodDef hist_methods[] {
   { "__setstate__", (PyCFunction) +[](py_hist* self, PyObject* arg) noexcept
     -> PyObject* {
       try {
-        map::map([](auto& to, PyObject* from) noexcept {
+        cont::map([](auto& to, PyObject* from) noexcept {
           Py_INCREF(( to = py_ptr(from) ));
         }, self->h, tuple_span(arg));
       } catch (...) { lipp(); return nullptr; }
@@ -659,7 +648,7 @@ hist_py_type::hist_py_type()
 struct py_mc_bin {
   PyObject_HEAD // must not be overwritten in the constructor
 
-  mc_bin bin;
+  mc_bin<> bin;
 
   py_mc_bin(PyObject* args, PyObject* kwargs) noexcept { }
 

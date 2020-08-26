@@ -1,12 +1,12 @@
-#ifndef IVANP_MAP_CONCEPTS_HH
-#define IVANP_MAP_CONCEPTS_HH
+#ifndef IVANP_CONTAINERS_CONCEPTS_HH
+#define IVANP_CONTAINERS_CONCEPTS_HH
 
 #include <tuple>
 #include <utility>
 #include <ivanp/traits.hh>
 #include <ivanp/concepts.hh>
 
-namespace ivanp::map {
+namespace ivanp::cont {
 
 template <typename C>
 concept Tuple =
@@ -107,6 +107,6 @@ constexpr bool is_invocable_for_elements =
 template <typename F, typename... C>
 concept InvocableForElements = is_invocable_for_elements<F,C...>;
 
-} // end namespace map
+} // end namespace cont
 
 #endif

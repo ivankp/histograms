@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
 
   cout << endl;
   // shared axis
-  auto a3 = std::make_shared<ivanp::hist::list_axis<>>(
+  auto a3 = std::make_shared<ivanp::hist::cont_axis<>>(
     std::vector<double>{10,20,30});
   ivanp::hist::histogram<
     int,

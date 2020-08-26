@@ -5,15 +5,24 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
-#include <ivanp/concepts.hh>
+#include <variant>
 
 namespace ivanp::hist {
 
-using index_type = unsigned;
+#ifndef IVANP_HIST_INDEX_TYPE
+#define IVANP_HIST_INDEX_TYPE unsigned
+#endif
+using index_type = IVANP_HIST_INDEX_TYPE;
 
-template <typename Edge>
-struct axis_base {
+// Container axis ===================================================
+template <
+  typename Cont = std::vector<double>,
+  typename Edge = typename std::remove_reference_t<Cont>::value_type
+>
+class cont_axis {
+public:
   using edge_type = Edge;
+  using cont_type = Cont;
 
   static constexpr edge_type lowest =
     std::numeric_limits<edge_type>::has_infinity
@@ -24,92 +33,41 @@ struct axis_base {
     std::numeric_limits<edge_type>::has_infinity
     ? std::numeric_limits<edge_type>::infinity()
     : std::numeric_limits<edge_type>::max();
-};
-
-template <typename Edge>
-struct poly_axis_base: axis_base<Edge> {
-  using edge_type = typename axis_base<Edge>::edge_type;
-
-  virtual ~poly_axis_base() { }
-  virtual index_type nedges() const = 0;
-  virtual index_type nbins() const = 0;
-
-  virtual index_type find_bin_index(edge_type x) const = 0;
-
-  virtual edge_type edge(index_type i) const = 0;
-  virtual edge_type min() const = 0;
-  virtual edge_type max() const = 0;
-  virtual edge_type lower(index_type i) const = 0;
-  virtual edge_type upper(index_type i) const = 0;
-};
-
-template <typename Edge, bool Poly>
-using axis_base_t = std::conditional_t<
-  Poly, poly_axis_base<Edge>, axis_base<Edge> >;
-
-template <typename A, typename Edge=void>
-concept Axis = requires (A a) {
-  { a.nedges()                             } -> convertible_to<index_type>;
-  { a.nbins()                              } -> convertible_to<index_type>;
-  { a.find_bin_index(std::declval<Edge>()) } -> convertible_to<index_type>;
-  { a.edge(std::declval<index_type>())     } -> convertible_to_or_any<Edge>;
-  { a.min()                                } -> convertible_to_or_any<Edge>;
-  { a.max()                                } -> convertible_to_or_any<Edge>;
-  { a.lower(std::declval<index_type>())    } -> convertible_to_or_any<Edge>;
-  { a.upper(std::declval<index_type>())    } -> convertible_to_or_any<Edge>;
-  typename A::edge_type;
-};
-
-// List axis ===================================================
-
-template <
-  typename List = std::vector<double>,
-  bool Poly = false,
-  typename Edge = typename std::remove_reference_t<List>::value_type
->
-class list_axis final: public axis_base_t<Edge,Poly>
-{
-public:
-  using base_type = axis_base_t<Edge,Poly>;
-  using edge_type = Edge;
-  using list_type = List;
-
-  static constexpr edge_type lowest = axis_base<edge_type>::lowest;
-  static constexpr edge_type highest = axis_base<edge_type>::lowest;
 
 private:
-  list_type _edges;
+  cont_type _edges;
 
 public:
-  list_axis() noexcept = default;
-  list_axis(const list_axis&) noexcept = default;
-  list_axis(list_axis&&) noexcept = default;
-  list_axis& operator=(const list_axis&) noexcept = default;
-  list_axis& operator=(list_axis&&) noexcept = default;
-  ~list_axis() = default;
+  cont_axis() noexcept = default;
+  cont_axis(const cont_axis&) noexcept = default;
+  cont_axis(cont_axis&&) noexcept = default;
+  cont_axis& operator=(const cont_axis&) noexcept = default;
+  cont_axis& operator=(cont_axis&&) noexcept = default;
+  ~cont_axis() = default;
 
-  list_axis(const list_type& edges): _edges(edges) { }
-  list_axis(list_type&& edges)
-  noexcept(std::is_nothrow_move_constructible_v<list_type>)
+  cont_axis(const cont_type& edges): _edges(edges) { }
+  cont_axis(cont_type&& edges)
+  noexcept(std::is_nothrow_move_constructible_v<cont_type>)
   : _edges(std::move(edges)) { }
-  list_axis& operator=(const list_type& edges) {
+  cont_axis& operator=(const cont_type& edges) {
     _edges = edges;
     return *this;
   }
-  list_axis& operator=(list_type&& edges)
-  noexcept(std::is_nothrow_move_assignable_v<list_type>) {
+  cont_axis& operator=(cont_type&& edges)
+  noexcept(std::is_nothrow_move_assignable_v<cont_type>) {
     _edges = std::move(edges);
     return *this;
   }
 
-  list_axis(std::initializer_list<edge_type> edges): _edges(edges) { }
-  list_axis& operator=(std::initializer_list<edge_type> edges) {
+  cont_axis(std::initializer_list<edge_type> edges): _edges(edges) { }
+  cont_axis& operator=(std::initializer_list<edge_type> edges) {
     _edges = edges;
     return *this;
   }
 
-  index_type nedges() const noexcept { return _edges.size(); }
-  index_type nbins() const noexcept { return _edges.size()-1; }
+  index_type nbins () const noexcept { return _edges.size()+1; }
+  index_type ndiv  () const noexcept { return _edges.size()-1; }
+  index_type nedges() const noexcept { return _edges.size()  ; }
 
   edge_type edge(index_type i) const noexcept { return _edges[i]; }
   edge_type operator[](index_type i) const noexcept { return edge(i); }
@@ -120,7 +78,7 @@ public:
   { return _edges.back(); }
 
   edge_type lower(index_type i) const noexcept {
-    return i==0 ? lowest : i>nedges()+1 ? highest : edge(i-1);
+    return i==0 ? lowest : i>nedges() ? highest : edge(i-1);
   }
   edge_type upper(index_type i) const noexcept {
     return i>=nedges() ? highest : edge(i);
@@ -136,24 +94,28 @@ public:
     return find_bin_index(x);
   }
 
-  list_type& edges() noexcept { return _edges; }
-  const list_type& edges() const noexcept { return _edges; }
+  cont_type& edges() noexcept { return _edges; }
+  const cont_type& edges() const noexcept { return _edges; }
 };
 
 // Uniform axis =====================================================
-
-template <typename Edge = double, bool Poly = false>
-class uniform_axis final: public axis_base_t<Edge,Poly>
-{
+template <typename Edge = double>
+class uniform_axis {
 public:
-  using base_type = axis_base_t<Edge,Poly>;
   using edge_type = Edge;
 
-  static constexpr edge_type lowest = axis_base<edge_type>::lowest;
-  static constexpr edge_type highest = axis_base<edge_type>::lowest;
+  static constexpr edge_type lowest =
+    std::numeric_limits<edge_type>::has_infinity
+    ? -std::numeric_limits<edge_type>::infinity()
+    : std::numeric_limits<edge_type>::lowest();
+
+  static constexpr edge_type highest =
+    std::numeric_limits<edge_type>::has_infinity
+    ? std::numeric_limits<edge_type>::infinity()
+    : std::numeric_limits<edge_type>::max();
 
 private:
-  index_type _nbins;
+  index_type _ndiv;
   edge_type _min, _max;
 
 public:
@@ -164,17 +126,18 @@ public:
   uniform_axis& operator=(uniform_axis&&) noexcept = default;
   ~uniform_axis() = default;
 
-  uniform_axis(index_type nbins, edge_type min, edge_type max) noexcept
-  : _nbins(nbins), _min(min), _max(max)
+  uniform_axis(index_type ndiv, edge_type min, edge_type max) noexcept
+  : _ndiv(ndiv), _min(min), _max(max)
   {
     if (_max < _min) std::swap(_min,_max);
   }
 
-  index_type nedges() const noexcept { return _nbins+1; }
-  index_type nbins() const noexcept { return _nbins; }
+  index_type nbins () const noexcept { return _ndiv+2; }
+  index_type ndiv  () const noexcept { return _ndiv  ; }
+  index_type nedges() const noexcept { return _ndiv+1; }
 
   edge_type edge(index_type i) const noexcept {
-    return _min + i*((_max - _min)/_nbins);
+    return _min + i*((_max - _min)/_ndiv);
   }
   edge_type operator[](index_type i) const noexcept { return edge(i); }
 
@@ -183,23 +146,101 @@ public:
 
   edge_type lower(index_type i) const noexcept {
     if (i==0) return lowest;
-    if (i > _nbins+2) return highest;
+    if (i >= _ndiv+1) return highest;
     return edge(i-1);
   }
   edge_type upper(index_type i) const noexcept {
-    if (i > _nbins) return highest;
+    if (i > _ndiv) return highest;
     return edge(i);
   }
 
   index_type find_bin_index(edge_type x) const noexcept {
     if (x < _min) return 0;
-    if (!(x < _max)) return _nbins+1;
-    return index_type(_nbins*(x-_min)/(_max-_min)) + 1;
+    if (!(x < _max)) return _ndiv+1;
+    return index_type(_ndiv*(x-_min)/(_max-_min)) + 1;
   }
   index_type operator()(edge_type x) const noexcept {
     return find_bin_index(x);
   }
 };
+
+// Variant axis =====================================================
+template <typename... Axes>
+class variant_axis {
+public:
+  using edge_type = std::common_type_t<typename Axes::edge_type...>;
+
+private:
+  std::variant<Axes...> ax;
+
+public:
+  variant_axis() noexcept = default;
+  variant_axis(const variant_axis&) noexcept = default;
+  variant_axis(variant_axis&&) noexcept = default;
+  variant_axis& operator=(const variant_axis&) noexcept = default;
+  variant_axis& operator=(variant_axis&&) noexcept = default;
+  ~variant_axis() = default;
+
+  template <typename... T>
+  variant_axis(const T&... args)
+  noexcept(std::is_nothrow_constructible_v<std::variant<Axes...>,const T&...>)
+  : ax(std::forward<T>(args)...) { }
+
+  index_type nbins() const noexcept {
+    return std::visit([](auto& ax){ return ax.nbins(); }, ax);
+  }
+  index_type ndiv() const noexcept {
+    return std::visit([](auto& ax){ return ax.ndiv(); }, ax);
+  }
+  index_type nedges() const noexcept {
+    return std::visit([](auto& ax){ return ax.nedges(); }, ax);
+  }
+
+  edge_type edge(index_type i) const noexcept {
+    return std::visit([i](auto& ax){ return ax.edge(i); }, ax);
+  }
+  edge_type operator[](index_type i) const noexcept { return edge(i); }
+
+  edge_type min() const noexcept {
+    return std::visit([](auto& ax){ return ax.min(); }, ax);
+  }
+  edge_type max() const noexcept {
+    return std::visit([](auto& ax){ return ax.max(); }, ax);
+  }
+
+  edge_type lower(index_type i) const noexcept {
+    return std::visit([i](auto& ax){ return ax.lower(i); }, ax);
+  }
+  edge_type upper(index_type i) const noexcept {
+    return std::visit([i](auto& ax){ return ax.upper(i); }, ax);
+  }
+
+  index_type find_bin_index(edge_type x) const noexcept {
+    return std::visit([x](auto& ax){ return ax.find_bin_index(x); }, ax);
+  }
+  index_type operator()(edge_type x) const noexcept {
+    return find_bin_index(x);
+  }
+
+  const auto& operator*() const noexcept { return ax; }
+  auto& operator*() noexcept { return ax; }
+};
+
+// ==================================================================
+
+template <typename Axis>
+[[nodiscard, gnu::const, gnu::always_inline]]
+inline auto& get_axis_ref(Axis& a) {
+  if constexpr (requires { a.nbins(); })
+    return a;
+  else
+    return get_axis_ref(*a);
+}
+
+template <typename Axis>
+using axis_edge_type = typename std::remove_reference_t<
+    decltype(get_axis_ref(std::declval<Axis&>()))
+  >::edge_type;
 
 } // end namespace ivanp::hist
 

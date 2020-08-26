@@ -17,8 +17,8 @@ struct bin_def {
   static nlohmann::json def() noexcept { return nullptr; }
 };
 
-template <typename List, bool Poly, typename Edge>
-void to_json(nlohmann::json& j, const list_axis<List,Poly,Edge>& axis) {
+template <typename Cont, typename Edge>
+void to_json(nlohmann::json& j, const cont_axis<Cont,Edge>& axis) {
   j = axis.edges();
 }
 

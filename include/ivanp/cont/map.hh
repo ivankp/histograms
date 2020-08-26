@@ -1,16 +1,16 @@
-#ifndef IVANP_MAP_HH
-#define IVANP_MAP_HH
+#ifndef IVANP_CONTAINERS_MAP_HH
+#define IVANP_CONTAINERS_MAP_HH
 
 #include <functional>
 #include <array>
 #include <vector>
 #include <stdexcept>
 
-#include <ivanp/map/concepts.hh>
+#include <ivanp/cont/concepts.hh>
 #include <ivanp/enum_class_bitmask.hh>
 
-namespace ivanp::map {
-enum class flags {
+namespace ivanp::cont {
+enum class map_flags {
   none = 0,
   forward = 1 << 0,
   no_return = 1 << 1,
@@ -24,10 +24,10 @@ enum class flags {
 
 namespace ivanp {
 template <>
-constexpr bool enable_bitmask_operators<map::flags> = true;
+constexpr bool enable_bitmask_operators<cont::map_flags> = true;
 }
 
-namespace ivanp::map {
+namespace ivanp::cont {
 namespace impl {
 
 template <typename C>
@@ -45,7 +45,7 @@ struct iterator_wrapper {
   };
 };
 
-template <flags flags, typename F, typename... C>
+template <map_flags flags, typename F, typename... C>
 inline decltype(auto) map(F&& f, C&&... c) {
   using indices = container_index_sequence<C...>;
   using dimensions = std::index_sequence_for<C...>;
@@ -53,23 +53,24 @@ inline decltype(auto) map(F&& f, C&&... c) {
   static constexpr bool got_tuples = (... || Tuple<C>);
   static constexpr bool map_by_unfolding =
     got_tuples &&
-    !(!!(flags & flags::prefer_iteration) && (... && Iterable<C>));
+    !(!!(flags & map_flags::prefer_iteration) && (... && Iterable<C>));
 
   if constexpr (sizeof...(C) > 1) {
-    if constexpr (!(flags & flags::no_static_size_check)) {
+    if constexpr (!(flags & map_flags::no_static_size_check)) {
       (..., []<typename _C>(type_constant<_C>) {
         static_assert(
           !Tuple<_C> || indices::size() == container_size<_C>,
           "tuples of unequal size given to map");
       }(type_constant<C>{}));
     }
-    if constexpr (!(flags & flags::no_dynamic_size_check)) {
+    if constexpr (!(flags & map_flags::no_dynamic_size_check)) {
       auto impl = [
         first = !got_tuples,
         s = indices::size()
       ] <typename _C> (_C&& _c) mutable {
         if constexpr (
-          Sizable<_C> && !(!(flags & flags::no_static_size_check) && Tuple<_C>)
+          Sizable<_C>
+          && !(!(flags & map_flags::no_static_size_check) && Tuple<_C>)
         ) {
           if (first) {
             first = false;
@@ -97,7 +98,7 @@ inline decltype(auto) map(F&& f, C&&... c) {
     []<typename... T>(type_sequence<T...>) {
       struct ret_t { bool no_return, same, refs, constructible; };
       return ret_t {
-        ((!!(flags & flags::no_return)) || ... || std::is_void_v<T>),
+        ((!!(flags & map_flags::no_return)) || ... || std::is_void_v<T>),
         are_same_v<T...>,
         (... || std::is_reference_v<T>),
         (... || std::is_constructible_v<std::decay_t<T>,T>),
@@ -131,7 +132,7 @@ inline decltype(auto) map(F&& f, C&&... c) {
                 auto& it = iter.first;
                 if constexpr (
                   sizeof...(C)>1
-                  && !(flags & flags::no_dynamic_size_check)
+                  && !(flags & map_flags::no_dynamic_size_check)
                   && !iter_t::has_size
                 ) {
                   if (it == iter.end) [[unlikely]] throw std::length_error(
@@ -149,12 +150,12 @@ inline decltype(auto) map(F&& f, C&&... c) {
       if constexpr ( ret.no_return )
         ( ..., impl(index_constant<I>{}) );
       else if constexpr (
-        !(flags & flags::prefer_tuple) &&
+        !(flags & map_flags::prefer_tuple) &&
         ret.constructible &&
-        ret.same && ( !(flags & flags::forward) || !ret.refs )
+        ret.same && ( !(flags & map_flags::forward) || !ret.refs )
       )
         return std::array { impl(index_constant<I>{}) ... };
-      else if constexpr ( !(flags & flags::forward) && ret.constructible )
+      else if constexpr ( !(flags & map_flags::forward) && ret.constructible )
         return std::tuple { impl(index_constant<I>{}) ... };
       else {
         // can't use std::forward_as_tuple() because the order of evaluation
@@ -169,7 +170,7 @@ inline decltype(auto) map(F&& f, C&&... c) {
   } else { // map to vector
     auto not_done = [&]<size_t... K>(index_constant<K>...) -> bool {
       if constexpr (
-        !!(flags & flags::no_dynamic_size_check)
+        !!(flags & map_flags::no_dynamic_size_check)
         || sizeof...(K) == 1
         || (... && Sizable<C&>) // already checked
       ) {
@@ -196,7 +197,7 @@ inline decltype(auto) map(F&& f, C&&... c) {
         auto out = []<typename T, typename... Ts>(type_sequence<T,Ts...>) ->
             std::vector<
               std::conditional_t<
-                !(flags & flags::forward)
+                !(flags & map_flags::forward)
                 || !std::is_lvalue_reference_v<T>,
                 std::decay_t<T>,
                 std::reference_wrapper<std::remove_reference_t<T>>
@@ -224,36 +225,36 @@ inline decltype(auto) map(F&& f, C&&... c) {
 
 } // end namespace impl
 
-template <flags flags=flags::none, Container... C, typename F>
+template <map_flags flags=map_flags::none, Container... C, typename F>
 requires InvocableForElements<F&&,C&&...>
 inline decltype(auto) map(F&& f, C&&... c) {
   return impl::map<flags>(std::forward<F>(f),std::forward<C>(c)...);
 }
 
-template <flags flags=flags::none, typename... T, typename F>
+template <map_flags flags=map_flags::none, typename... T, typename F>
 requires Invocable<F&&,T...>
 inline decltype(auto) map(F&& f, std::initializer_list<T>... c) {
   return impl::map<flags>(std::forward<F>(f),c...);
 }
 
-template <flags flags=flags::none, typename F>
+template <map_flags flags=map_flags::none, typename F>
 requires Invocable<F&&>
 inline decltype(auto) map(F&& /*f*/) {
   // return impl::map<flags>(std::forward<F>(f));
 }
 
-namespace operators { // --------------------------------------------
+namespace ops::map { // --------------------------------------------
 
 template <Container C, typename F>
 requires InvocableForElements<F&&,C&&>
 inline decltype(auto) operator|(C&& c, F&& f) {
-  return impl::map<flags::none>(std::forward<F>(f),std::forward<C>(c));
+  return impl::map<map_flags::none>(std::forward<F>(f),std::forward<C>(c));
 }
 
 template <Container C, typename F>
 requires InvocableForElements<F&&,C&&>
 inline decltype(auto) operator||(C&& c, F&& f) {
-  return impl::map<flags::forward>(std::forward<F>(f),std::forward<C>(c));
+  return impl::map<map_flags::forward>(std::forward<F>(f),std::forward<C>(c));
 }
 
 template <Tuple C, typename F>
@@ -263,6 +264,6 @@ inline constexpr decltype(auto) operator%(C&& c, F&& f) {
 }
 
 } // end namespace operators
-} // end namespace map
+} // end namespace cont
 
 #endif
