@@ -131,7 +131,9 @@ public:
   histogram& operator=(histogram&&) = default;
   ~histogram() = default;
 
-  explicit histogram(const axes_type& axes): _axes(axes) { resize_bins(); }
+  explicit histogram(const axes_type& axes)
+  noexcept(std::is_nothrow_copy_constructible_v<axes_type>)
+  : _axes(axes) { resize_bins(); }
   explicit histogram(axes_type&& axes)
   noexcept(std::is_nothrow_move_constructible_v<axes_type>)
   : _axes(std::move(axes)) { resize_bins(); }
