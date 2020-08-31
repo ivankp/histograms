@@ -77,8 +77,8 @@ namespace impl {
 
 template <
   typename Bin,
-  typename Axes,
-  typename Bins,
+  cont::Container Axes,
+  cont::Container Bins,
   typename Filler,
   hist_flags flags
 >
@@ -137,6 +137,17 @@ public:
   explicit histogram(axes_type&& axes)
   noexcept(std::is_nothrow_move_constructible_v<axes_type>)
   : _axes(std::move(axes)) { resize_bins(); }
+
+  template <cont::Container C>
+  requires(!requires{ axes_type(std::declval<C&&>()); })
+  explicit histogram(C&& axes) {
+    if constexpr (requires { _axes.resize(size_t{}); })
+      _axes.resize(cont::size(axes));
+    cont::map<cont::map_flags::forward>(
+      []<typename B>(auto& a, B&& b){ a = std::forward<B>(b); },
+      _axes, axes);
+    resize_bins();
+  }
 
   const axes_type& axes() const noexcept { return _axes; }
   template <size_t I>

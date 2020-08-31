@@ -75,13 +75,20 @@ public:
     return *this;
   }
 
-  template <typename T> requires(!requires{ cont_type(std::declval<T&&>()); })
-  cont_axis(T&& edges) {
+  template <cont::List C>
+  requires (!requires{ cont_type(std::declval<C&&>()); })
+        && cont::Iterable<cont_type>
+  cont_axis& operator=(C&& edges) {
     if constexpr (requires { _edges.resize(size_t{}); })
       _edges.resize(cont::size(edges));
-    auto [a,b] = cont::forwarding_iterators(std::forward<T>(edges));
+    auto [a,b] = cont::forwarding_iterators(std::forward<C>(edges));
     std::copy(a,b,std::begin(_edges));
+    return *this;
   }
+  template <cont::List C>
+  requires (!requires{ cont_type(std::declval<C&&>()); })
+        && cont::Iterable<cont_type>
+  cont_axis(C&& edges) { *this = edges; }
 
   index_type nbins () const noexcept { return cont::size(_edges)+1; }
   index_type ndiv  () const noexcept { return cont::size(_edges)-1; }

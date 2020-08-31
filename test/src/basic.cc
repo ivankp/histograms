@@ -1,6 +1,7 @@
 #include <ivanp/hist/histograms.hh>
 #include <climits>
 #include <array>
+#include <list>
 
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch.hpp>
@@ -108,4 +109,14 @@ TEST_CASE( "Nd histogram with variant axes", "[hist]" ) {
   REQUIRE( h({50,50},10) == 11 );
   REQUIRE( h.fill_at(5*5+2,4) == 15 );
   REQUIRE( h.bin_at(5*5+2) == 15 );
+}
+
+TEST_CASE( "generic container constructor", "[hist]" ) {
+  using hist_t = ivanp::hist::histogram<>;
+  hist_t h(std::make_tuple(
+    std::array<float,3>{1,2,3},
+    std::list{1,2,3}
+  ));
+
+  REQUIRE( h.nbins() == 16 );
 }

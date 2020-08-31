@@ -29,9 +29,6 @@ concept Iterable =
   };
 
 template <typename C>
-concept Container = Iterable<C> || Tuple<C>;
-
-template <typename C>
 concept Sizable =
   requires(C& a) {
     { std::size(a) } -> convertible_to<size_t>;
@@ -39,6 +36,9 @@ concept Sizable =
 
 template <typename C>
 concept List = Iterable<C> && Sizable<C>;
+
+template <typename C>
+concept Container = List<C> || Tuple<C>;
 
 template <Container C>
 struct container_traits {
