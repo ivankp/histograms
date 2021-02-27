@@ -75,20 +75,18 @@ public:
     return *this;
   }
 
-  template <cont::List C>
-  requires (!requires{ cont_type(std::declval<C&&>()); })
-        && cont::Iterable<cont_type>
-  cont_axis& operator=(C&& edges) {
+  template <cont::Container C>
+  requires(requires { (cont_type)std::declval<C&&>(); })
+  cont_axis(C&& edges): cont_axis((cont_type)std::forward<C>(edges)) { }
+
+  template <cont::Container C>
+  cont_axis(C&& edges) {
     if constexpr (requires { _edges.resize(size_t{}); })
       _edges.resize(cont::size(edges));
-    auto [a,b] = cont::forwarding_iterators(std::forward<C>(edges));
-    std::copy(a,b,std::begin(_edges));
-    return *this;
+    cont::map<cont::map_flags::forward>(
+      []<typename B>(auto& a, B&& b){ a = std::forward<B>(b); },
+      _edges, edges);
   }
-  template <cont::List C>
-  requires (!requires{ cont_type(std::declval<C&&>()); })
-        && cont::Iterable<cont_type>
-  cont_axis(C&& edges) { *this = edges; }
 
   index_type nbins () const noexcept { return cont::size(_edges)+1; }
   index_type ndiv  () const noexcept { return cont::size(_edges)-1; }
@@ -138,8 +136,8 @@ public:
     : std::numeric_limits<edge_type>::max();
 
 private:
-  index_type _ndiv;
   edge_type _min, _max;
+  index_type _ndiv;
 
 public:
   constexpr uniform_axis() noexcept = default;
@@ -149,8 +147,8 @@ public:
   constexpr uniform_axis& operator=(uniform_axis&&) noexcept = default;
   ~uniform_axis() = default;
 
-  constexpr uniform_axis(index_type ndiv, edge_type min, edge_type max)
-  noexcept: _ndiv(ndiv), _min(min), _max(max)
+  constexpr uniform_axis(edge_type min, edge_type max, index_type ndiv)
+  noexcept: _min(min), _max(max), _ndiv(ndiv)
   {
     if (_max < _min) std::swap(_min,_max);
   }

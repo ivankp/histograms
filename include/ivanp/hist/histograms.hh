@@ -139,7 +139,10 @@ public:
   : _axes(std::move(axes)) { resize_bins(); }
 
   template <cont::Container C>
-  requires(!requires{ axes_type(std::declval<C&&>()); })
+  requires(requires { (axes_type)std::declval<C&&>(); })
+  explicit histogram(C&& axes): histogram((axes_type)std::forward<C>(axes)) { }
+
+  template <cont::Container C>
   explicit histogram(C&& axes) {
     if constexpr (requires { _axes.resize(size_t{}); })
       _axes.resize(cont::size(axes));
