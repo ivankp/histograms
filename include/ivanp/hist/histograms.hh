@@ -95,9 +95,17 @@ private:
   axes_type _axes;
   bins_type _bins;
 
-  void resize_bins() {
+  template <typename... T>
+  void resize_bins(T&&... bin_args) {
+    static constexpr bool can_resize =
+      requires (index_type n) { _bins.resize(n); };
+    static constexpr bool can_emplace_back = requires {
+      _bins.emplace_back(*this,index_type{},std::forward<T>(bin_args)...); };
+    static constexpr bool can_emplace = requires {
+      _bins.emplace(*this,index_type{},std::forward<T>(bin_args)...); };
+
     if constexpr (
-      requires (index_type n) { _bins.resize(n); }
+      can_resize || can_emplace_back || can_emplace
     ) {
       index_type n = 1;
       if constexpr (!perbin_axes) {
@@ -119,7 +127,24 @@ private:
           n += dj * (get_axis_ref(*it).nbins());
         }, _axes);
       }
-      _bins.resize(n);
+      if constexpr (sizeof...(bin_args)==0) {
+        if constexpr (can_resize) _bins.resize(n);
+      } else {
+        if constexpr (can_emplace_back || can_emplace) {
+          if constexpr (requires { _bins.reserve(n); })
+            _bins.reserve(n);
+          for (index_type i=0; i<n; ++i) {
+            if constexpr (can_emplace_back)
+              _bins.emplace_back(*this,i,std::forward<T>(bin_args)...);
+            else
+              _bins.emplace(*this,i,std::forward<T>(bin_args)...);
+          }
+        } else {
+          if constexpr (can_resize) _bins.resize(n);
+          for (index_type i=0; i<n; ++i)
+            _bins[i] = bin_type(*this,i,std::forward<T>(bin_args)...);
+        }
+      }
     }
   }
 
@@ -131,25 +156,35 @@ public:
   histogram& operator=(histogram&&) = default;
   ~histogram() = default;
 
-  explicit histogram(const axes_type& axes)
+  template <typename... T>
+  explicit histogram(const axes_type& axes, T&&... bin_args)
   noexcept(std::is_nothrow_copy_constructible_v<axes_type>)
-  : _axes(axes) { resize_bins(); }
-  explicit histogram(axes_type&& axes)
+  : _axes(axes)
+  {
+    resize_bins(std::forward<T>(bin_args)...);
+  }
+  template <typename... T>
+  explicit histogram(axes_type&& axes, T&&... bin_args)
   noexcept(std::is_nothrow_move_constructible_v<axes_type>)
-  : _axes(std::move(axes)) { resize_bins(); }
+  : _axes(std::move(axes))
+  {
+    resize_bins(std::forward<T>(bin_args)...);
+  }
 
-  template <cont::Container C>
+  template <cont::Container C, typename... T>
   requires(requires { (axes_type)std::declval<C&&>(); })
-  explicit histogram(C&& axes): histogram((axes_type)std::forward<C>(axes)) { }
+  explicit histogram(C&& axes, T&&... bin_args)
+  : histogram((axes_type)std::forward<C>(axes), std::forward<T>(bin_args)...)
+  { }
 
-  template <cont::Container C>
-  explicit histogram(C&& axes) {
+  template <cont::Container C, typename... T>
+  explicit histogram(C&& axes, T&&... bin_args) {
     if constexpr (requires { _axes.resize(size_t{}); })
       _axes.resize(cont::size(axes));
     cont::map<cont::map_flags::forward>(
       []<typename B>(auto& a, B&& b){ a = std::forward<B>(b); },
       _axes, axes);
-    resize_bins();
+    resize_bins(std::forward<T>(bin_args)...);
   }
 
   const axes_type& axes() const noexcept { return _axes; }
