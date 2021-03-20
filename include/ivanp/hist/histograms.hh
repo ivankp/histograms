@@ -179,11 +179,23 @@ public:
 
   template <cont::Container C, typename... T>
   explicit histogram(C&& axes, T&&... bin_args) {
-    if constexpr (requires { _axes.resize(size_t{}); })
-      _axes.resize(cont::size(axes));
-    cont::map<cont::map_flags::forward>(
-      []<typename B>(auto& a, B&& b){ a = std::forward<B>(b); },
-      _axes, axes);
+    if constexpr (cont::Tuple<C>) {
+      cont::map<cont::map_flags::forward>(
+        []<typename A, typename B>(A& a, B&& b){
+          a = (A)std::forward<B>(b);
+        }, _axes, axes);
+    } else {
+      // TODO: non-stl case
+      if constexpr (requires { _axes.reserve(size_t{}); })
+        _axes.reserve(cont::size(axes));
+      cont::map<cont::map_flags::forward>([&]<typename A>(A&& a){
+        if constexpr (requires { _axes.emplace_back(std::forward<A>(a)); }) {
+          _axes.emplace_back(std::forward<A>(a));
+        } else {
+          _axes.emplace(std::forward<A>(a));
+        }
+      }, axes);
+    }
     resize_bins(std::forward<T>(bin_args)...);
   }
 

@@ -81,11 +81,23 @@ public:
 
   template <cont::Container C>
   cont_axis(C&& edges) {
-    if constexpr (requires { _edges.resize(size_t{}); })
-      _edges.resize(cont::size(edges));
-    cont::map<cont::map_flags::forward>(
-      []<typename B>(auto& a, B&& b){ a = std::forward<B>(b); },
-      _edges, edges);
+    if constexpr (cont::Tuple<C>) {
+      cont::map<cont::map_flags::forward>(
+        []<typename A, typename B>(A& a, B&& b){
+          a = (A)std::forward<B>(b);
+        }, _edges, edges);
+    } else {
+      // TODO: non-stl case
+      if constexpr (requires { _edges.reserve(size_t{}); })
+        _edges.reserve(cont::size(edges));
+      cont::map<cont::map_flags::forward>([&]<typename A>(A&& a){
+        if constexpr (requires { _edges.emplace_back(std::forward<A>(a)); }) {
+          _edges.emplace_back(std::forward<A>(a));
+        } else {
+          _edges.emplace(std::forward<A>(a));
+        }
+      }, edges);
+    }
   }
 
   index_type nbins () const noexcept { return cont::size(_edges)+1; }
