@@ -40,6 +40,9 @@ concept List = Iterable<C> && Sizable<C>;
 template <typename C>
 concept Container = List<C> || Tuple<C>;
 
+template <typename C>
+concept Sequence = Iterable<C> || Tuple<C>;
+
 template <Container C>
 struct container_traits {
   using type = std::remove_reference_t<C>;

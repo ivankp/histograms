@@ -264,6 +264,35 @@ inline constexpr decltype(auto) operator%(C&& c, F&& f) {
 }
 
 } // end namespace operators
+
+template <typename A, typename B>
+void assign(A& dest, B&& src) {
+  if constexpr (requires { dest = std::forward<B>(src); }) {
+    dest = std::forward<B>(src);
+  } else if constexpr (requires { dest = (A)std::forward<B>(src); }) {
+    dest = (A)std::forward<B>(src);
+  } else {
+    const auto emplace = [&]<typename T>(T&& x){
+      if constexpr (requires { dest.emplace_back(std::forward<T>(x)); })
+        dest.emplace_back(std::forward<T>(x));
+      else
+        dest.emplace(std::forward<T>(x));
+    };
+    if constexpr (InvocableForElements< decltype(emplace), B&& >) {
+      if constexpr (requires { dest.reserve(size_t{}); })
+        dest.reserve(cont::size(src));
+      cont::map<cont::map_flags::forward>(emplace, src);
+    } else {
+      if constexpr (requires { dest.resize(size_t{}); })
+        dest.resize(cont::size(src));
+      cont::map<cont::map_flags::forward>(
+        []<typename T>(auto& a, T&& b){
+          assign(a,std::forward<T>(b));
+        }, dest, src);
+    }
+  }
+}
+
 } // end namespace cont
 
 #endif

@@ -75,30 +75,17 @@ public:
     return *this;
   }
 
-  template <cont::Container C>
-  requires(requires { (cont_type)std::declval<C&&>(); })
-  cont_axis(C&& edges): cont_axis((cont_type)std::forward<C>(edges)) { }
-
-  template <cont::Container C>
-  cont_axis(C&& edges) {
-    if constexpr (cont::Tuple<C>) {
-      cont::map<cont::map_flags::forward>(
-        []<typename A, typename B>(A& a, B&& b){
-          a = (A)std::forward<B>(b);
-        }, _edges, edges);
-    } else {
-      // TODO: non-stl case
-      if constexpr (requires { _edges.reserve(size_t{}); })
-        _edges.reserve(cont::size(edges));
-      cont::map<cont::map_flags::forward>([&]<typename A>(A&& a){
-        if constexpr (requires { _edges.emplace_back(std::forward<A>(a)); }) {
-          _edges.emplace_back(std::forward<A>(a));
-        } else {
-          _edges.emplace(std::forward<A>(a));
-        }
-      }, edges);
-    }
+  template <typename T>
+  cont_axis& operator=(T&& edges) {
+    cont::assign(_edges,std::forward<T>(edges));
   }
+
+  template <typename T>
+  requires(requires { (cont_type)std::declval<T&&>(); })
+  cont_axis(T&& edges): cont_axis((cont_type)std::forward<T>(edges)) { }
+
+  template <typename T>
+  cont_axis(T&& edges) { *this = std::forward<T>(edges); }
 
   index_type nbins () const noexcept { return cont::size(_edges)+1; }
   index_type ndiv  () const noexcept { return cont::size(_edges)-1; }
