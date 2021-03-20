@@ -183,11 +183,16 @@ public:
     resize_bins(std::forward<T>(bin_args)...);
   }
 
-  const axes_type& axes() const noexcept { return _axes; }
-  template <size_t I>
-  const auto& axis() const noexcept { return std::get<I>(_axes); }
-  const auto& axis(index_type i) const noexcept { return cont::at(_axes,i); }
   auto ndim() const noexcept { return cont::size(_axes); }
+  const axes_type& axes() const noexcept { return _axes; }
+
+  template <size_t I>
+  const auto& axis() const noexcept
+  requires(!perbin_axes)
+  { return std::get<I>(_axes); }
+  const auto& axis(index_type i) const noexcept
+  requires(!perbin_axes)
+  { return cont::at(_axes,i); }
 
   const bins_type& bins() const noexcept { return _bins; }
   bins_type& bins() noexcept { return _bins; }
