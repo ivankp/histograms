@@ -77,8 +77,8 @@ namespace impl {
 
 template <
   typename Bin,
-  cont::Container Axes,
-  cont::Container Bins,
+  typename Axes,
+  typename Bins,
   typename Filler,
   hist_flags flags
 >
@@ -157,7 +157,11 @@ public:
   ~histogram() = default;
 
   template <typename... T>
-  explicit histogram(const axes_type& axes, T&&... bin_args)
+  explicit histogram(
+    std::conditional_t<
+      std::is_reference_v<axes_type>,
+      axes_type, const axes_type&
+    > axes, T&&... bin_args)
   noexcept(std::is_nothrow_copy_constructible_v<axes_type>)
   : _axes(axes)
   {
@@ -166,6 +170,7 @@ public:
   template <typename... T>
   explicit histogram(axes_type&& axes, T&&... bin_args)
   noexcept(std::is_nothrow_move_constructible_v<axes_type>)
+  requires(!std::is_reference_v<axes_type>)
   : _axes(std::move(axes))
   {
     resize_bins(std::forward<T>(bin_args)...);
@@ -420,7 +425,7 @@ using histogram = impl::histogram<
   Bin,
   typename std::disjunction<
     is_axes_spec<Specs>...,
-    is_axes_spec<axes_spec< std::vector<cont_axis<std::vector<double>>> >>
+    is_axes_spec<axes_spec< std::vector<cont_axis<>> >>
   >::type,
   typename std::disjunction<
     is_bins_spec<Specs>...,

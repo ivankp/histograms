@@ -17,6 +17,9 @@ namespace ivanp::hist {
 #endif
 using index_type = IVANP_HIST_INDEX_TYPE;
 
+template <typename Edge>
+class uniform_axis;
+
 // Container axis ===================================================
 template <
   typename Cont = std::vector<double>,
@@ -78,6 +81,7 @@ public:
   template <typename T>
   cont_axis& operator=(T&& edges) {
     cont::assign(_edges,std::forward<T>(edges));
+    return *this;
   }
 
   template <typename T>
@@ -116,6 +120,26 @@ public:
 
   cont_type& edges() noexcept { return _edges; }
   const cont_type& edges() const noexcept { return _edges; }
+
+  template <typename C, typename E>
+  cont_axis& operator+=(const cont_axis<C,E>& o) {
+    _edges.insert( _edges.end(), o._edges.begin(), o._edges.end() );
+    return *this;
+  }
+  template <typename E>
+  cont_axis& operator+=(const uniform_axis<E>& o) {
+    auto n = o.nedges();
+    _edges.reserve(nedges()+n);
+    for (decltype(n) i=0; i<n; ++i)
+      _edges.emplace_back(o[i]);
+    return *this;
+  }
+
+  void sort() {
+    using std::begin;
+    using std::end;
+    std::sort(begin(_edges),end(_edges));
+  }
 };
 
 // Uniform axis =====================================================
@@ -191,6 +215,8 @@ class variant_axis {
 public:
   using edge_type = std::common_type_t<typename Axes::edge_type...>;
   using variant_type = std::variant<Axes...>;
+  template <size_t I>
+  using axis_type = std::variant_alternative_t<I,variant_type>;
 
 private:
   variant_type ax;
