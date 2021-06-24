@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include <ivanp/cont/concepts.hh>
+#include <ivanp/cont/general.hh>
 #include <ivanp/enum_class_bitmask.hh>
 
 namespace ivanp::cont {
